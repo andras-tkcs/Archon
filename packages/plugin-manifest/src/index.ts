@@ -1,5 +1,3 @@
-export const FIRST_PARTY_PLUGIN_REPO = 'coleam00/Archon';
-
 /**
  * The shared distribution contract for Archon plugins: the author-owned
  * `archon-plugin.json` manifest and the local install receipt.
@@ -14,7 +12,10 @@ export const FIRST_PARTY_PLUGIN_REPO = 'coleam00/Archon';
 import { z } from 'zod';
 import { type MAINTAINED_PROVIDER_IDS } from '@archon/provider-contract';
 import { chatPluginDescriptorSchema } from '@archon/chat-contract/descriptor';
+import { BUNDLED_RELEASE_REPO } from '@archon/paths/bundled-build';
 import { releaseAsset } from '@archon/paths/release-asset';
+
+export const FIRST_PARTY_PLUGIN_REPO = BUNDLED_RELEASE_REPO;
 import { providerPluginDescriptorSchema } from '@archon/provider-contract/plugin/wire';
 
 export function maintainedProviderPluginId(id: (typeof MAINTAINED_PROVIDER_IDS)[number]): string {

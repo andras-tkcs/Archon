@@ -102,6 +102,8 @@ jobs:
           # not the version tag — fall back to the user-supplied `version` input.
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
           GIT_COMMIT: ${{ github.sha }}
+          # A fork's binaries download from the fork's own releases.
+          RELEASE_REPO: ${{ github.repository }}
           TARGET: ${{ matrix.target }}
           OUTFILE: dist/${{ matrix.binary }}
         run: |
@@ -110,7 +112,7 @@ jobs:
           # Short commit (first 8 chars of SHA)
           GIT_COMMIT="${GIT_COMMIT::8}"
           mkdir -p dist
-          VERSION="$VERSION" GIT_COMMIT="$GIT_COMMIT" TARGET="$TARGET" OUTFILE="$OUTFILE" bash scripts/build-binaries.sh
+          VERSION="$VERSION" GIT_COMMIT="$GIT_COMMIT" RELEASE_REPO="$RELEASE_REPO" TARGET="$TARGET" OUTFILE="$OUTFILE" bash scripts/build-binaries.sh
 
       - name: Build GitHub forge plugin
         id: forge-plugin

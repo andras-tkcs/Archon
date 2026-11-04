@@ -11,6 +11,7 @@ import {
   BUNDLED_VERSION,
   BUNDLED_WEB_DIST_SHA256,
   BUNDLED_SERVER_SHA256,
+  BUNDLED_RELEASE_REPO,
 } from '@archon/paths';
 
 import { serverLaunchArgv, serverReleaseAsset } from '@archon/paths/server-launch';
@@ -18,8 +19,6 @@ import { serverLaunchArgv, serverReleaseAsset } from '@archon/paths/server-launc
 import { extractWebArchive } from './serve-web-archive';
 
 const log = createLogger('cli.serve');
-
-const GITHUB_REPO = 'coleam00/Archon';
 
 function toError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err));
@@ -176,13 +175,13 @@ async function fetchVerifiedAsset(
   embeddedChecksum: string,
   phase: 'web_dist' | 'server_dist'
 ): Promise<ArrayBuffer> {
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${asset}`;
+  const url = `https://github.com/${BUNDLED_RELEASE_REPO}/releases/download/v${version}/${asset}`;
   try {
     let expectedHash: string;
     if (embeddedChecksum) expectedHash = parseEmbeddedChecksum(embeddedChecksum);
     else if (phase === 'web_dist') {
       // Development binary builds without a packaged web artifact retain the remote-checksum fallback.
-      const checksumsUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/checksums.txt`;
+      const checksumsUrl = `https://github.com/${BUNDLED_RELEASE_REPO}/releases/download/v${version}/checksums.txt`;
       const checksums = await fetch(checksumsUrl);
       if (!checksums.ok)
         throw new Error(`Failed to download checksums from ${checksumsUrl}: ${checksums.status}`);

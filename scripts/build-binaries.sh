@@ -11,6 +11,7 @@
 #
 # Env vars:
 #   VERSION    - version string (default: from package.json)
+#   RELEASE_REPO - GitHub owner/repo the binary downloads releases from (default: coleam00/Archon)
 #   GIT_COMMIT - short git commit (default: from `git rev-parse --short HEAD`)
 #   TARGET     - bun target triple (e.g. bun-darwin-arm64); CI mode
 #   OUTFILE    - output path for the CLI binary; CI mode. The server and provider
@@ -20,6 +21,7 @@ set -euo pipefail
 
 VERSION="${VERSION:-$(grep '"version"' package.json | head -1 | cut -d'"' -f4)}"
 GIT_COMMIT="${GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')}"
+RELEASE_REPO="${RELEASE_REPO:-coleam00/Archon}"
 TARGET="${TARGET:-}"
 OUTFILE="${OUTFILE:-}"
 
@@ -96,6 +98,8 @@ export const BUNDLED_GIT_COMMIT = '${GIT_COMMIT}';
 /** SHA-256 of archon-web.tar.gz, embedded at build time by scripts/build-binaries.sh */
 export const BUNDLED_WEB_DIST_SHA256 = '${WEB_DIST_SHA256}';
 export const BUNDLED_SERVER_SHA256 = '${SERVER_SHA256}';
+/** GitHub \`owner/repo\` whose releases this build downloads from and checks for updates. */
+export const BUNDLED_RELEASE_REPO = '${RELEASE_REPO}';
 EOF
 }
 SERVER_SHA256=''

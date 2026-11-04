@@ -37,7 +37,7 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-$REPO         = "coleam00/Archon"
+$REPO         = if ($env:ARCHON_RELEASE_REPO) { $env:ARCHON_RELEASE_REPO } else { "coleam00/Archon" }
 $BINARY_NAME  = "archon"
 $VERSION      = if ($env:VERSION)     { $env:VERSION }     else { "latest" }
 $INSTALL_DIR  = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:USERPROFILE\.archon\bin" }

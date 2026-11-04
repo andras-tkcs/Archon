@@ -19,3 +19,5 @@ export const BUNDLED_GIT_COMMIT = 'unknown';
 /** SHA-256 of archon-web.tar.gz, embedded at build time by scripts/build-binaries.sh */
 export const BUNDLED_WEB_DIST_SHA256 = '';
 export const BUNDLED_SERVER_SHA256 = '';
+/** GitHub `owner/repo` whose releases this build downloads from and checks for updates. */
+export const BUNDLED_RELEASE_REPO = 'coleam00/Archon';

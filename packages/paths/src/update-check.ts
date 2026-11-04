@@ -2,6 +2,7 @@ import { join } from 'path';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { getArchonHome } from './home-paths';
 import { createLogger } from './logger';
+import { BUNDLED_RELEASE_REPO } from './bundled-build';
 
 const log = createLogger('update-check');
 
@@ -23,7 +24,7 @@ const CACHE_FILE = 'update-check.json';
 const STALENESS_MS = 60 * 60 * 1000; // 1 hour
 const NOTICE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 3000; // 3 seconds
-const GITHUB_API_URL = 'https://api.github.com/repos/coleam00/Archon/releases/latest';
+const GITHUB_API_URL = `https://api.github.com/repos/${BUNDLED_RELEASE_REPO}/releases/latest`;
 
 function getCachePath(): string {
   return join(getArchonHome(), CACHE_FILE);
