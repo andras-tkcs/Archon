@@ -1,0 +1,56 @@
+# devflow project profile, read by the devflow toolkit commands and by the devflow Archon pack
+# (tkcs-lab/archon-work packs/devflow). Keys: docs/profile-reference.md in
+# https://github.com/andras-tkcs/claude-toolkit
+
+project:
+  name: Archon
+
+docs:
+  must_read:
+    - AGENTS.md
+    - CONTRIBUTING.md
+    - .archon/engineering.md
+  changelog:
+    file: CHANGELOG.md
+    section: "## [Unreleased]"
+
+git:
+  main_branch: dev
+  branch_pattern: "<type>/<kebab-case>"
+  branch_types: [feat, fix, refactor, docs, test, chore, ci, perf, build]
+  merge_style: merge-commit
+
+verify:
+  fast:
+    - bun run lint
+    - bun run check:ratchet
+  dod:
+    - bun run type-check
+    - bun run lint
+    - bun run format:check
+    - bun run check:ratchet
+    - bun run check:mock-modules
+    - bun run check:cli-import-boundary
+    - bun run check:package-edges
+    - bun run validate --only generated-files
+    - run: bun run test
+      narrow: "bun run test {args}"
+  dod_conditional:
+    - when: ["migrations/**", "packages/core/src/db/**"]
+      do: "Run bun run check:schema-upgrades and bun run check:sqlite-vintages (CONTRIBUTING.md, Schema changes)."
+    - when: [".archon/workflows/**", ".archon/scripts/**"]
+      do: "Run bun run test --plan pack and bun run validate --only workflow-fixtures."
+    - when: ["scripts/install.sh", "scripts/install.ps1", "packages/docs-web/public/install*"]
+      do: "Run bun run test:install."
+  dod_manual:
+    - "A user-visible change keeps the docs site and CLI help truthful."
+    - "Commits and the PR carry no AI attribution."
+  dod_doc: CONTRIBUTING.md#code-quality
+
+ci:
+  dispatchable:
+    - workflow: test.yml
+      use_when: "Run the SDLC pack script tests or workflow fixtures, which pull requests do not run"
+      notes: "Inputs: pack-tests=true and/or pack-fixtures=true."
+
+stacks: []
