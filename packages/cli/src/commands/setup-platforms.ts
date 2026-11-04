@@ -3,6 +3,7 @@
  * Telegram and Slack credentials and the bot display name.
  */
 import { confirm, isCancel, log, multiselect, note, password, text } from '@clack/prompts';
+import { FIRST_PARTY_PLUGIN_REPO } from '@archon/plugin-manifest';
 import {
   cancelSetup,
   type SetupConfig,
@@ -106,7 +107,7 @@ export async function collectSlackConfig(): Promise<SlackConfig> {
       '   - Copy the Bot User OAuth Token (xoxb-...)\n' +
       '6. Invite bot to your channel: /invite @YourBotName\n' +
       '7. Install the Slack plugin, then restart the server:\n' +
-      '   archon plugin add coleam00/Archon/plugins/chat-slack\n\n' +
+      `   archon plugin add ${FIRST_PARTY_PLUGIN_REPO}/plugins/chat-slack\n\n` +
       'Get your user ID: Click profile -> ... -> Copy member ID',
     'Slack Setup'
   );

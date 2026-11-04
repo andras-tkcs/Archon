@@ -16,6 +16,7 @@
 #   INSTALL_DIR      - Installation directory (default: /usr/local/bin)
 #   SKIP_CHECKSUM    - Set to "true" to skip checksum verification (not recommended)
 #   ARCHON_PROVIDERS - Same as --providers; the flag wins
+#   ARCHON_RELEASE_REPO - GitHub owner/repo to install from (default: coleam00/Archon)
 #
 # Examples:
 #   # Install latest
@@ -37,7 +38,7 @@
 set -euo pipefail
 
 # Configuration
-REPO="coleam00/Archon"
+REPO="${ARCHON_RELEASE_REPO:-coleam00/Archon}"
 BINARY_NAME="archon"
 VERSION="${VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"

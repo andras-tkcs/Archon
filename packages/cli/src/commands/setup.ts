@@ -33,6 +33,7 @@ import {
   cancel,
   log,
 } from '@clack/prompts';
+import { BUNDLED_RELEASE_REPO } from '@archon/paths/bundled-build';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { type Document, isScalar, parseDocument, Scalar, YAMLMap } from 'yaml';
@@ -469,7 +470,7 @@ async function finishSetup(): Promise<void> {
   note(
     'To update Archon:\n' +
       '  Homebrew:  brew upgrade coleam00/archon/archon\n' +
-      '  curl:      curl -fsSL https://raw.githubusercontent.com/coleam00/Archon/main/scripts/install.sh | bash\n' +
+      `  curl:      curl -fsSL https://raw.githubusercontent.com/${BUNDLED_RELEASE_REPO}/main/scripts/install.sh | bash\n` +
       '  Docker:    docker pull ghcr.io/coleam00/archon:latest',
     'Update Instructions'
   );
