@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-11-04
+
+A project can run workflows kept on another branch of its own repository.
+
+### Added
+
+- `extraWorkflowSources` in a project's `.archon/config.yaml` loads workflows from git refs of the same repository, such as a `plans` branch, without checking them out. `archon workflow sync`, `POST /api/codebases/{id}/sync` and the console's Workflow sources dialog fetch each ref and replace its snapshot; `GET /api/codebases/{id}/extra-sources` shows the commit each source was last synced to. The snapshot loads as project workflows, after the global scope and before the project's own `.archon/workflows/`, so a project file of the same name wins. Nothing syncs in the background: a run uses the last snapshot, records its commit in the run's capture, and is not changed by a later sync, including after a resume. A source that was never synced is a workflow load error naming `archon workflow sync`, and a failed fetch is an error rather than a fall back to the old snapshot. Commands and scripts are still read from the project, global and bundled scopes. A binary older than 0.13.4 cannot read a run capture that includes an extra source. (#3)
+
 ## [0.13.3] - 2026-11-04
 
-First release of the andras-tkcs fork, based on upstream 0.13.2. The fork's binaries download their server, web UI, providers and plugins from the fork's own releases instead of `coleam00/Archon`.
+First release of the tkcs-lab fork, based on upstream 0.13.2. The fork's binaries download their server, web UI, providers and plugins from the fork's own releases instead of `coleam00/Archon`.
 
 ### Changed
 
