@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-11-04
+
+First release of the andras-tkcs fork, based on upstream 0.13.2. The fork's binaries download their server, web UI, providers and plugins from the fork's own releases instead of `coleam00/Archon`.
+
+### Changed
+
+- Release downloads, the update check, the first-party plugin id and the install scripts read one build-time repository, `BUNDLED_RELEASE_REPO`. `scripts/build-binaries.sh` embeds it from `RELEASE_REPO` (the release workflow passes `github.repository`); it defaults to `coleam00/Archon`. `scripts/install.sh` and `scripts/install.ps1` accept `ARCHON_RELEASE_REPO`.
+
 ## [0.13.2] - 2026-10-29
 
 Upgrading from 0.13.0 with providers installed works in one command again.
