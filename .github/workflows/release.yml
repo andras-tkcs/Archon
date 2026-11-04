@@ -486,6 +486,8 @@ jobs:
             dist/checksums.txt
 
   update-homebrew:
+    # The formula and its checksum download are upstream's; a fork has no Homebrew tap.
+    if: github.repository == 'coleam00/Archon'
     needs: release
     runs-on: ubuntu-latest
     permissions:
