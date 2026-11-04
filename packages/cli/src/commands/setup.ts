@@ -33,7 +33,7 @@ import {
   cancel,
   log,
 } from '@clack/prompts';
-import { BUNDLED_RELEASE_REPO } from '@archon/paths';
+import { BUNDLED_RELEASE_REPO } from '@archon/paths/bundled-build';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { type Document, isScalar, parseDocument, Scalar, YAMLMap } from 'yaml';

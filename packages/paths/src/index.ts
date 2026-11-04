@@ -112,7 +112,6 @@ export {
   BUNDLED_GIT_COMMIT,
   BUNDLED_WEB_DIST_SHA256,
   BUNDLED_SERVER_SHA256,
-  BUNDLED_RELEASE_REPO,
 } from './bundled-build';
 
 // Compiled CLI discovery manifest

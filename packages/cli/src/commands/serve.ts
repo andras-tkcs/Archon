@@ -11,8 +11,8 @@ import {
   BUNDLED_VERSION,
   BUNDLED_WEB_DIST_SHA256,
   BUNDLED_SERVER_SHA256,
-  BUNDLED_RELEASE_REPO,
 } from '@archon/paths';
+import { BUNDLED_RELEASE_REPO } from '@archon/paths/bundled-build';
 
 import { serverLaunchArgv, serverReleaseAsset } from '@archon/paths/server-launch';
 
