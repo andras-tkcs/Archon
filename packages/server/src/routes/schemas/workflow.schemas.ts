@@ -34,6 +34,7 @@ import {
 } from '@archon/workflows/schemas/workflow-run';
 import { runStopReasonSchema as engineRunStopReasonSchema } from '@archon/workflows/schemas/run-terminal-reason';
 import { nodeCostScopeSchema } from '@archon/workflows/schemas/node-execution';
+import { dashboardRunsResultSchema } from '@archon/workflows/schemas/workflow-run-listing';
 import { workflowEventRowSchema } from '@archon/core/schemas/workflow-event';
 import {
   dashboardWorkflowRunSchema as coreDashboardWorkflowRunSchema,
@@ -415,21 +416,31 @@ export const labelAttentionResponseSchema = z
   .openapi('LabelAttentionResponse');
 
 /** GET /api/dashboard/runs response. */
+/** `all` plus one count per run status, owned by the engine's dashboard result. */
+export const runStatusCountsSchema = dashboardRunsResultSchema.shape.counts.meta({
+  id: 'RunStatusCounts',
+});
+
 export const dashboardRunsResponseSchema = z
   .object({
     runs: z.array(dashboardWorkflowRunSchema),
     total: z.number(),
-    counts: z.object({
-      all: z.number(),
-      running: z.number(),
-      completed: z.number(),
-      failed: z.number(),
-      cancelled: z.number(),
-      pending: z.number(),
-      paused: z.number(),
-    }),
+    counts: runStatusCountsSchema,
+    /** Unread finished runs per bucket, under the same filters as `counts`. */
+    unread: runStatusCountsSchema,
+    /** Ids of the returned `runs` whose result is unread. */
+    unreadRunIds: z.array(z.string()),
   })
   .openapi('DashboardRunsResponse');
+
+/** GET /api/dashboard/unread: unread finished runs across every project. */
+export const dashboardUnreadResponseSchema = z
+  .object({
+    total: z.number(),
+    /** Unread runs per codebase id; runs with no codebase count only in `total`. */
+    byProject: z.record(z.string(), z.number()),
+  })
+  .openapi('DashboardUnreadResponse');
 
 /** A single artifact file listed by GET /api/runs/:runId/artifacts. */
 export const artifactFileSchema = z
