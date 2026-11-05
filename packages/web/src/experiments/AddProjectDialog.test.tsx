@@ -45,6 +45,8 @@ mock.module('./console/skills', () => ({
   getMetrics: mock(),
   listExtraSources: mock(),
   syncExtraSources: mock(),
+  listUnreadByProject: mock(),
+  markRunRead: mock(),
 }));
 const addProjectDialogComponent = (await import('./console/components/AddProjectDialog'))
   .AddProjectDialog;
