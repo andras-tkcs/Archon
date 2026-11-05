@@ -18,11 +18,12 @@ export const K = {
   worktrees: (projectId: string): string => `worktrees:${projectId}`,
   runsAttention: 'runs:attention' as const,
   runs: (scope: Scope): string => `runs:${scopeKey(scope)}`,
+  // Under `runs:` so every invalidate('runs') refreshes the project rail's badges too.
+  runsUnread: 'runs:unread' as const,
   run: (id: string): string => `run:${id}`,
   metrics: (scope: Scope, since: string): string => `metrics:${scopeKey(scope)}:${since}`,
   messages: (conversationId: string): string => `messages:${conversationId}`,
   conversations: (projectId: string): string => `conversations:${projectId}`,
-  countsGlobal: 'counts:global' as const,
   pendingRuns: 'pendingRuns' as const,
   envVars: (projectId: string): string => `envVars:${projectId}`,
   extraSources: (projectId: string): string => `extraSources:${projectId}`,

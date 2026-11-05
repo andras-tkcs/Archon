@@ -137,6 +137,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
   widthRef.current = width;
 
   const { data: projects, error } = useEntity<Project[]>(K.projects, () => skill.listProjects());
+  const { data: unread } = useEntity(K.runsUnread, skill.listUnreadByProject);
 
   const allSelected = scope === 'all';
 
@@ -325,6 +326,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
                 key={p.id}
                 project={p}
                 selected={scope === p.id}
+                unreadCount={unread?.byProject[p.id] ?? 0}
                 onClick={() => {
                   navigate(`/console/p/${p.id}`);
                 }}

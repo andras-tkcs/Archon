@@ -27,9 +27,15 @@ function normalizeCounts(c: Partial<RunCounts>): RunCounts {
   };
 }
 
-export async function listRuns(
-  opts: ListRunsOptions = {}
-): Promise<{ runs: Run[]; counts: RunCounts; total: number }> {
+export interface RunFeed {
+  runs: Run[];
+  counts: RunCounts;
+  /** Unread finished runs per bucket, under the same filters as `counts`. */
+  unread: RunCounts;
+  total: number;
+}
+
+export async function listRuns(opts: ListRunsOptions = {}): Promise<RunFeed> {
   const qs = new URLSearchParams();
   if (opts.codebaseId !== undefined) qs.set('codebaseId', opts.codebaseId);
   if (opts.status !== undefined) qs.set('status', opts.status);
@@ -37,9 +43,11 @@ export async function listRuns(
   if (opts.offset !== undefined) qs.set('offset', opts.offset.toString());
   const url = `/api/dashboard/runs${qs.size > 0 ? `?${qs.toString()}` : ''}`;
   const res = await requestJson<DashboardRunsResponse>(url);
+  const unreadIds = new Set(res.unreadRunIds);
   return {
-    runs: res.runs.map(toRun),
+    runs: res.runs.map(raw => ({ ...toRun(raw), unread: unreadIds.has(raw.id) })),
     counts: normalizeCounts(res.counts),
+    unread: normalizeCounts(res.unread),
     total: res.total,
   };
 }
@@ -56,10 +64,16 @@ export async function listRunsNeedingAttention(): Promise<RunsAttention> {
   return { runs: res.runs.map(toRun), degraded: res.degraded ?? [] };
 }
 
-export async function listGlobalCounts(): Promise<RunCounts> {
-  // Counts without any codebase filter — used by top chrome pill.
-  const res = await requestJson<DashboardRunsResponse>('/api/dashboard/runs?limit=1');
-  return normalizeCounts(res.counts);
+export type UnreadByProject = components['schemas']['DashboardUnreadResponse'];
+
+/** Unread finished runs across every project, for the project rail. */
+export async function listUnreadByProject(): Promise<UnreadByProject> {
+  return requestJson<UnreadByProject>('/api/dashboard/unread');
+}
+
+/** Mark the run's current result read for everyone on this install. */
+export async function markRunRead(id: string): Promise<void> {
+  await requestJson(`/api/workflows/runs/${encodeURIComponent(id)}/read`, { method: 'POST' });
 }
 
 export async function getRun(

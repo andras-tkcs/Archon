@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import type { RunStatus } from '../lib/run-status';
 import type { RunCounts } from '../skills/runs';
+import { UNREAD_BG_CLASS } from '../lib/unread';
 
 export type Filter = 'all' | RunStatus;
 
@@ -8,6 +9,8 @@ interface FilterChipsProps {
   value: Filter;
   onChange: (next: Filter) => void;
   counts: RunCounts;
+  /** Unread finished runs per bucket; a non-zero bucket highlights its count. */
+  unread: RunCounts;
 }
 
 // Order reflects the typical user journey: what's happening now (running),
@@ -25,12 +28,14 @@ const ORDER: readonly {
   { filter: 'all', label: 'All', countKey: 'all' },
 ];
 
-export function FilterChips({ value, onChange, counts }: FilterChipsProps): ReactElement {
+export function FilterChips({ value, onChange, counts, unread }: FilterChipsProps): ReactElement {
   return (
     <div className="flex items-center gap-1.5">
       {ORDER.map(({ filter, label, countKey }) => {
         const active = value === filter;
         const n = counts[countKey];
+        const unreadCount = unread[countKey];
+        const hasUnread = unreadCount > 0;
         return (
           <button
             key={filter}
@@ -46,15 +51,20 @@ export function FilterChips({ value, onChange, counts }: FilterChipsProps): Reac
             {label}
             <span
               className={`min-w-[20px] rounded-full border px-[7px] py-px text-center font-mono text-[10.5px] font-bold tabular-nums ${
-                active
-                  ? 'border-transparent bg-accent-bright/20 text-text-primary'
-                  : 'bg-surface-elevated text-text-secondary'
+                hasUnread
+                  ? `${UNREAD_BG_CLASS} border-transparent text-text-primary`
+                  : active
+                    ? 'border-transparent bg-accent-bright/20 text-text-primary'
+                    : 'bg-surface-elevated text-text-secondary'
               }`}
               // Inline because the console scope's wildcard border-color rule
               // repaints Tailwind border utilities (see theme.css).
-              style={{ borderColor: active ? 'transparent' : 'var(--border)' }}
+              style={{ borderColor: active || hasUnread ? 'transparent' : 'var(--border)' }}
+              title={hasUnread ? `${String(unreadCount)} unread` : undefined}
+              data-unread={hasUnread ? '' : undefined}
             >
               {n}
+              {hasUnread ? <span className="sr-only">, {unreadCount} unread</span> : null}
             </span>
             {active ? (
               <span

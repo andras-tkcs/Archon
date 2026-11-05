@@ -12,14 +12,8 @@ import { K, type Scope } from '../store/keys';
 import { useKeymap, type Binding } from '../lib/keymap';
 import * as skill from '../skills';
 import { runDetailPath, type Run } from '../primitives/run';
-import type { RunCounts } from '../skills/runs';
+import type { RunCounts, RunFeed } from '../skills/runs';
 import type { Project } from '../primitives/project';
-
-interface FeedData {
-  runs: Run[];
-  counts: RunCounts;
-  total: number;
-}
 
 const EMPTY_COUNTS: RunCounts = {
   all: 0,
@@ -299,7 +293,7 @@ export function RunsPage(): ReactElement {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement | null>(null);
 
-  const { data, loading, error } = useEntity<FeedData>(K.runs(scope), () =>
+  const { data, loading, error } = useEntity<RunFeed>(K.runs(scope), () =>
     skill.listRuns(scope === 'all' ? {} : { codebaseId: scope })
   );
 
@@ -314,6 +308,8 @@ export function RunsPage(): ReactElement {
 
   const realRuns = data?.runs ?? [];
   const realCounts = data?.counts ?? EMPTY_COUNTS;
+  // Demo runs are never unread, so the real unread counts stand as they are.
+  const unread = data?.unread ?? EMPTY_COUNTS;
 
   const demoRuns = useMemo(
     () => (demoMode ? buildDemoRuns(scope, project?.name ?? null) : []),
@@ -346,7 +342,7 @@ export function RunsPage(): ReactElement {
       {/* Status sub-tabs — their own strip; the active underline overlaps the
           hairline below (design: .subtabs). */}
       <div className="shrink-0 overflow-x-auto border-b border-border px-6">
-        <FilterChips value={filter} onChange={setFilter} counts={counts} />
+        <FilterChips value={filter} onChange={setFilter} counts={counts} unread={unread} />
       </div>
 
       {pending.error !== undefined ? (

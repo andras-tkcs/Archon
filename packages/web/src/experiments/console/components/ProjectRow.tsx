@@ -11,10 +11,13 @@ import {
 import { formatProjectLocator } from '../lib/format';
 import { HttpError, errorDetail } from '../lib/http';
 import type { Project } from '../primitives/project';
+import { UNREAD_BG_CLASS } from '../lib/unread';
 
 interface ProjectRowProps {
   project: Project;
   selected: boolean;
+  /** Finished runs in this project whose result is unread. */
+  unreadCount: number;
   onClick: () => void;
   onRemove?: () => Promise<void>;
   onRename?: (name: string) => Promise<void>;
@@ -232,6 +235,18 @@ function RenameInput({
   );
 }
 
+function UnreadBadge({ count }: { count: number }): ReactElement {
+  return (
+    <span
+      title={`${String(count)} unread`}
+      className={`min-w-[20px] shrink-0 rounded-full px-[7px] py-px text-center font-mono text-[10.5px] font-bold tabular-nums text-text-primary ${UNREAD_BG_CLASS}`}
+    >
+      {count}
+      <span className="sr-only"> unread</span>
+    </span>
+  );
+}
+
 function LivePulse(): ReactElement {
   return (
     <span
@@ -440,6 +455,7 @@ function RowAlert({
 export function ProjectRow({
   project,
   selected,
+  unreadCount,
   onClick,
   onRemove,
   onRename,
@@ -579,6 +595,7 @@ export function ProjectRow({
       {/* LIVE pulse on the selected project — hidden while hovering so the
           env/⋯ actions can take its slot. */}
       {selected ? <LivePulse /> : null}
+      {unreadCount > 0 ? <UnreadBadge count={unreadCount} /> : null}
 
       <RowActions
         projectName={project.name}
