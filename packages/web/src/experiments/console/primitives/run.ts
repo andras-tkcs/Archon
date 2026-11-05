@@ -201,8 +201,8 @@ function readApproval(approval: WorkflowApproval | undefined): Run['approval'] {
         message:
           approval.type === 'child_workflow'
             ? approval.childRunId
-              ? `Waiting on sub-run ${approval.childRunId}. Review the child run to continue.`
-              : 'Waiting on a sub-run. Review the child run to continue.'
+              ? `Waiting on sub-run ${approval.childRunId}. Open the child run to see what it is waiting on.`
+              : 'Waiting on a sub-run. Open the child run to see what it is waiting on.'
             : approval.message,
         completionSignaled: approval.completionSignaled === true,
         decisions: approval.decisions ?? [],

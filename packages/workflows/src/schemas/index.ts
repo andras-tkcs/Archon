@@ -238,6 +238,7 @@ export {
   isGateResolved,
   isTerminalRunStatus,
   runAttention,
+  isAnswerableAttention,
   isWorkflowWaitContext,
   readWorkflowWaitContext,
   pendingWorkflowWaitDeadline,

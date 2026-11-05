@@ -297,7 +297,7 @@ test('approval projections resolve choices through the workflow owner', () => {
   }
 });
 
-test.each(['matching', 'stale-pause', 'stale-node', 'missing-platform'] as const)(
+test.each(['matching', 'timer-child', 'stale-pause', 'stale-node', 'missing-platform'] as const)(
   'child guidance routing: %s',
   async identity => {
     const delivered: ChatRunEvent[] = [];
@@ -329,11 +329,40 @@ test.each(['matching', 'stale-pause', 'stale-node', 'missing-platform'] as const
         "UPDATE remote_agent_workflow_runs SET status = 'running' WHERE id = $1",
         [run.id]
       );
+      const child = await createRun(`${descriptor.id}-child`);
+      await getDatabase().query(
+        "UPDATE remote_agent_workflow_runs SET status = 'running' WHERE id = $1",
+        [child.id]
+      );
+      if (identity === 'timer-child') {
+        await getDatabase().query(
+          "UPDATE remote_agent_workflow_runs SET status = 'paused', metadata = $2 WHERE id = $1",
+          [
+            child.id,
+            JSON.stringify({
+              wait: {
+                owner: 'node',
+                nodeId: 'pause',
+                kind: 'time',
+                waitingSince: '2026-11-05T10:00:00.000Z',
+                resumeAt: '2026-11-05T10:10:00.000Z',
+              },
+            }),
+          ]
+        );
+      } else {
+        await pauseWorkflowRun(child.id, {
+          nodeId: 'gate',
+          pauseId: 'gate-pause',
+          type: 'approval',
+          message: 'Review',
+        });
+      }
       await pauseWorkflowRun(run.id, {
         nodeId: 'sub',
         pauseId: 'current',
         type: 'child_workflow',
-        childRunId: 'child-full-id',
+        childRunId: child.id,
         message: 'Waiting',
       });
       const emitter = getWorkflowEventEmitter();
@@ -353,7 +382,7 @@ test.each(['matching', 'stale-pause', 'stale-node', 'missing-platform'] as const
       await finished;
       const card = delivered.find(event => event.type === 'approval_pending');
       if (identity === 'matching') {
-        expect(card?.message).toContain('/archon-workflow approve child-full-id');
+        expect(card?.message).toContain(`/archon-workflow approve ${child.id}`);
         expect(card?.message).not.toContain('/workflow ');
       } else if (identity === 'missing-platform') {
         expect(card).toBeUndefined();
