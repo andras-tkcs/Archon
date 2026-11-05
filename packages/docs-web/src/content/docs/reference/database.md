@@ -227,6 +227,7 @@ The tables defined in `migrations/000_combined.sql` are prefixed with `remote_ag
   - Stores workflow state, step progress, and parent conversation linkage
   - Nullable `user_id` records which user triggered the run
   - Nullable `parent_run_id` (#2121 Phase 2) — self-referential FK (`ON DELETE SET NULL`) linking a `workflow:` sub-run to the run that spawned it; null for top-level runs. Makes the run tree walkable (`findChildRuns`/`getRunAncestry`) for the abandon cascade and cost roll-up.
+  - Nullable `read_at`: when anyone last marked the run's result read through the API, install-wide. A terminal run is unread in the console while it is NULL or earlier than `completed_at`. The upgrade step that adds the column sets it to `completed_at` (or the current time) on existing terminal runs, so history does not turn unread; runs finished by a binary that predates the column stay unread until opened.
   - `conversation_id` cascades on conversation delete: a hard `DELETE` of a conversation would erase its run rows and silently drop the live-run cleanup pin for their isolation environments (#2868). Soft delete is the only supported path — a future hard-delete must resolve live runs first.
 
 - **`remote_agent_workflow_events`** - Step-level workflow event log; see [node execution records](/reference/node-execution/) for payloads and resume compatibility

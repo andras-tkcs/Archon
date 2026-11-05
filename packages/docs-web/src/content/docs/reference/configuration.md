@@ -149,6 +149,11 @@ tiers:
 aliases:
   '@reasoning': { provider: claude, model: opus, effort: max }
 
+# Workflows whose runs never show as unread in the console, for every project.
+# See "Auto-read workflows" below.
+# autoReadWorkflows:
+#   - tkcs-lab/devflow:*
+
 ```
 
 The `tiers:` block above is no longer hand-edit-only -- you can also set the `small`/`medium`/`large` presets from the console **AI Settings** -> **Model Tiers** panel, or from the CLI with [`archon ai tier set`](/reference/cli/#ai). Connecting your own provider API key or subscription is covered in [Per-user credentials and AI Settings](/getting-started/ai-assistants/#per-user-credentials-and-ai-settings).
@@ -205,7 +210,7 @@ Run config accepts settings whose consumers still execute after the run is dispa
 - `commands` and `defaults` already affected workflow and command discovery.
 - `worktree` and `container` already affected isolation.
 - `botName`, `streaming`, `paths`, and `concurrency` are process-scoped or have no per-run consumer.
-- `recommendedWorkflows` is listing-only.
+- `recommendedWorkflows` is listing-only, and `autoReadWorkflows` is a console listing rule.
 - `assistants.pi.env` and `assistants.pi.maxConcurrent` are install settings rather than per-run settings. Pi concurrency is enforced at host admission for process providers; bundled Pi also retains its in-process semaphore.
 
 Unknown keys, unregistered providers, invalid effort values, and alias names without `@` also fail instead of being ignored. CLI accepts a local path; the HTTP run API accepts inline validated content and never a caller-selected server path.
@@ -270,6 +275,10 @@ defaults:
 #   - archon-ship
 #   - archon-review
 #   - archon-plan
+
+# Workflows whose runs in this project never show as unread in the console
+# autoReadWorkflows:
+#   - devflow-run-*
 
 # Per-project environment variables for workflow execution.
 # Injected into workflow subprocess environments. For secrets, open Environment variables
@@ -454,6 +463,37 @@ recommendedWorkflows:
 - Search and category filters apply to **both** partitions. If filtering hides all recommended cards, the header is not rendered.
 - Key **absent or empty** → flat list, no header, no divider. Zero-config safe.
 - The list lives **per-project only** — it is not part of global config (`~/.archon/config.yaml`) and is not per-user.
+
+### Auto-read workflows (`autoReadWorkflows`)
+
+The console highlights finished runs whose result nobody has opened yet: the status-chip
+counts, a dot on the run's row, and a badge on its project in the project rail. Opening a
+finished run marks it read for everyone on the install.
+
+Only top-level runs a person started can be unread. A `workflow:` sub-run and a run started
+by a trigger (schedule, forge event or webhook) never are. Runs started some other way by a
+machine, such as `archon workflow run --detach` from a script node, look human-started to
+Archon; list their workflows here so they open as read:
+
+```yaml
+autoReadWorkflows:
+  - archon-implement      # exact stored workflow name
+  - tkcs-lab/devflow:*    # prefix: every workflow of this pack
+  - devflow-run-*
+```
+
+**Semantics:**
+
+- Each entry is an exact stored workflow name or a prefix ending in `*`. A `*` anywhere else
+  is a literal character.
+- Set it in `~/.archon/config.yaml` to apply to every project, or in a repository's
+  `.archon/config.yaml` to apply to that project's runs. Both lists apply together; neither
+  overrides the other.
+- The list is advisory: a value that is not a list, and entries that are not non-empty
+  strings, are dropped without failing the config. A repository config that cannot be read
+  contributes no entries, so its runs can show as unread but never the reverse.
+- Repository edits apply on the next console refresh. Global edits made outside the
+  Settings UI apply after a server restart, like other global settings.
 
 **Worktree path behavior:** By default, every repo's worktrees live under `~/.archon/workspaces/<owner>/<repo>/worktrees/<branch>` — outside the repo, invisible to the IDE. Set `worktree.path` to opt in to a **repo-local** layout instead: worktrees are created at `<repoRoot>/<worktree.path>/<branch>` so they show up in the file tree and editor workspace. A common choice is `.worktrees`. Because worktrees now live inside the repository tree, you should add the directory to your `.gitignore` (Archon does not modify user-owned files). The configured path must be relative to the repo root; absolute paths and paths containing `..` segments fail loudly at worktree creation rather than silently falling back.
 

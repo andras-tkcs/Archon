@@ -324,6 +324,7 @@ Only user-defined workflows can be deleted. Bundled defaults cannot be removed.
 | POST | `/api/workflows/runs/{runId}/respond` | Resolve a paused gate with one of its declared decisions |
 | POST | `/api/workflows/runs/{runId}/answer` | Answer a paused attention wait in its declared form, naming the exact occurrence |
 | POST | `/api/workflows/runs/{runId}/signal` | Signal an external event wait; use `occurrence` for an exact match |
+| POST | `/api/workflows/runs/{runId}/read` | Mark the run's current result read for everyone on the install (`{success, message}`); **404** for an unknown run. A later completion, for example after a resume, makes the run unread again. See [Dashboard](#dashboard) |
 | DELETE | `/api/workflows/runs/{runId}` | Delete a terminal run and its events |
 
 For `/signal`, send `{ "event": "checks.complete", "occurrence": "<metadata.wait.pauseId>", "payload": { "conclusion": "success" } }`. The occurrence identifies the exact wait, including when deadlines repeat. The legacy `resumeAt` selector remains accepted and is required when `occurrence` is omitted; it cannot distinguish two occurrences with the same event and deadline. If both selectors are supplied, both must match. Waits persisted without a `pauseId` can still be signaled using `resumeAt`.
@@ -527,6 +528,7 @@ Returns `{ commands: [{ name, source: "bundled" | "project" }] }`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/dashboard/runs` | List enriched workflow runs for the dashboard |
+| GET | `/api/dashboard/unread` | Unread finished runs across every project: `{total, byProject}`, keyed by codebase id. Runs with no codebase count only in `total` |
 | GET | `/api/dashboard/conversations` | Active and queued conversation processing in this server process, with acquisition and enqueue times |
 
 Query parameters include status filters, date ranges, and pagination. Used by the Command Center UI.
@@ -537,6 +539,13 @@ filter and pagination, so a bad row can fail the request even when it is outside
 status or page. The response is HTTP 500 (`Failed to list dashboard runs`), with no partial
 list or counts. Server logs record `WorkflowStatusReadError` with an offending run ID and
 exact stored value; the HTTP error does not include those details.
+
+`unread` has the same keys as `counts` and counts unread finished runs under the same filters.
+`unreadRunIds` lists the ids of the returned `runs` that are unread. A run is unread when it is
+`completed`, `failed` or `cancelled`, has no parent run, was not started by a trigger, its
+workflow is not on an [`autoReadWorkflows`](/reference/configuration/#auto-read-workflows-autoreadworkflows)
+list, and nobody has marked it read (`POST /api/workflows/runs/{runId}/read`) since it last
+completed.
 
 Each run includes `active_nodes`, ordered by unresolved `node_started` event order. Completion,
 failure, and both skip lifecycle events remove a node; `node_suspended` keeps it active; a retrying start adds it again. Concurrent
