@@ -422,6 +422,27 @@ recommendedWorkflows: "archon-plan"
 
       expect(config.recommendedWorkflows).toBeUndefined();
     });
+
+    test('sanitizes autoReadWorkflows in repo config the same way', async () => {
+      mockFsReadFile.mockResolvedValue(`
+autoReadWorkflows:
+  - " tkcs-lab/devflow:* "
+  - 7
+  - devflow-run-*
+`);
+
+      const config = await loadRepoConfig('/test/repo');
+
+      expect(config.autoReadWorkflows).toEqual(['tkcs-lab/devflow:*', 'devflow-run-*']);
+    });
+
+    test('reads autoReadWorkflows from global config and drops a non-array value', async () => {
+      mockFsReadFile.mockResolvedValue('autoReadWorkflows:\n  - nightly-*\n');
+      expect((await loadGlobalConfig(true)).autoReadWorkflows).toEqual(['nightly-*']);
+
+      mockFsReadFile.mockResolvedValue('autoReadWorkflows: nightly-*\n');
+      expect((await loadGlobalConfig(true)).autoReadWorkflows).toBeUndefined();
+    });
   });
 
   describe('settingSources config', () => {

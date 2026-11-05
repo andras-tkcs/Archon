@@ -206,6 +206,55 @@ describe('SqliteAdapter upgrade path', () => {
 
     expect(columnsOf(path, 'remote_agent_workflow_runs')).toContain('outcome');
   });
+
+  test('adds read_at once, marking only terminal runs read as of their completion', async () => {
+    const path = await upgradeFixturePath();
+    await new SqliteAdapter(path).close();
+    const raw = new Database(path);
+    try {
+      raw.run('ALTER TABLE remote_agent_workflow_runs DROP COLUMN read_at');
+      raw.run(
+        "INSERT INTO remote_agent_conversations (id, platform_type, platform_conversation_id) VALUES ('c', 'test', 'c')"
+      );
+      raw.run(
+        `INSERT INTO remote_agent_workflow_runs (id, conversation_id, workflow_name, user_message, status, completed_at) VALUES
+          ('done', 'c', 'w', '', 'completed', '2026-01-02 03:04:05'),
+          ('failed', 'c', 'w', '', 'failed', '2026-01-03 03:04:05'),
+          ('running', 'c', 'w', '', 'running', NULL)`
+      );
+    } finally {
+      raw.close();
+    }
+
+    await new SqliteAdapter(path).close();
+    const readAt = (): Record<string, string | null> => {
+      const db = new Database(path);
+      try {
+        return Object.fromEntries(
+          prepareAll<{ id: string; read_at: string | null }>(
+            db,
+            'SELECT id, read_at FROM remote_agent_workflow_runs'
+          ).map(row => [row.id, row.read_at])
+        );
+      } finally {
+        db.close();
+      }
+    };
+    expect(readAt()).toEqual({
+      done: '2026-01-02 03:04:05',
+      failed: '2026-01-03 03:04:05',
+      running: null,
+    });
+
+    const unread = new Database(path);
+    try {
+      unread.run("UPDATE remote_agent_workflow_runs SET read_at = NULL WHERE id = 'done'");
+    } finally {
+      unread.close();
+    }
+    await new SqliteAdapter(path).close();
+    expect(readAt().done).toBeNull();
+  });
 });
 
 describe('migrateColumns on an existing database', () => {
@@ -282,6 +331,7 @@ describe('migrateColumns on an existing database', () => {
           user_message TEXT,
           metadata TEXT DEFAULT '{}',
           parent_conversation_id TEXT,
+          completed_at TEXT,
           last_activity_at TEXT,
           created_at TEXT DEFAULT (datetime('now'))
         );
@@ -405,6 +455,7 @@ describe('migrateColumns on an existing database', () => {
           status TEXT DEFAULT 'pending',
           user_message TEXT,
           metadata TEXT DEFAULT '{}',
+          completed_at TEXT,
           last_activity_at TEXT,
           created_at TEXT DEFAULT (datetime('now'))
         );

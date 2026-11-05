@@ -85,6 +85,10 @@ const keyClassifications = {
     kind: 'unavailable',
     reason: 'recommended workflows are listing-only and have no run consumer',
   },
+  autoReadWorkflows: {
+    kind: 'unavailable',
+    reason: 'auto-read workflow names are a console listing rule and have no run consumer',
+  },
 } as const satisfies Record<ConfigKey, KeyClassification>;
 
 export const workflowRunConfigKeys = Object.entries(keyClassifications)

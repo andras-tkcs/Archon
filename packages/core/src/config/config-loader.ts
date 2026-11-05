@@ -254,6 +254,7 @@ async function readGlobalConfig(configPath: string): Promise<GlobalConfig> {
   }
   const parsed = parseConfigMapping(content, configPath);
   validateGlobalConfigBlocks(parsed, configPath);
+  sanitizeWorkflowNameList(parsed, 'autoReadWorkflows', configPath);
   return parsed as GlobalConfig;
 }
 
@@ -276,29 +277,39 @@ export async function loadGlobalConfig(forceReload = false): Promise<GlobalConfi
   return cachedGlobalConfig;
 }
 
+type WorkflowNameListKey = 'recommendedWorkflows' | 'autoReadWorkflows';
+
 /**
- * Coerce `recommendedWorkflows` to a clean `string[]` of trimmed non-empty
- * entries. Non-array values, non-string entries, and empties are dropped.
- * Advisory data — never throws.
+ * Coerce an advisory workflow-name list to a clean `string[]` of trimmed non-empty
+ * entries, or remove the key when it is not an array. Non-string entries and
+ * empties are dropped. Never throws: a bad display preference must not break
+ * every config load.
  */
-function sanitizeRecommendedWorkflows(raw: unknown, configPath: string): string[] | undefined {
-  if (raw === undefined || raw === null) return undefined;
+function sanitizeWorkflowNameList(
+  config: Partial<Record<WorkflowNameListKey, unknown>>,
+  key: WorkflowNameListKey,
+  configPath: string
+): void {
+  const raw = config[key];
+  if (raw === undefined || raw === null) {
+    delete config[key];
+    return;
+  }
+  const event = key === 'recommendedWorkflows' ? 'recommended_workflows' : 'auto_read_workflows';
   if (!Array.isArray(raw)) {
-    getLog().debug(
-      { configPath, rawType: typeof raw },
-      'config.recommended_workflows_not_array_ignored'
-    );
-    return undefined;
+    getLog().debug({ configPath, rawType: typeof raw }, `config.${event}_not_array_ignored`);
+    delete config[key];
+    return;
   }
   const cleaned: string[] = [];
   for (const entry of raw) {
     if (typeof entry === 'string' && entry.trim().length > 0) {
       cleaned.push(entry.trim());
     } else {
-      getLog().debug({ configPath, entry }, 'config.recommended_workflows_entry_ignored');
+      getLog().debug({ configPath, entry }, `config.${event}_entry_ignored`);
     }
   }
-  return cleaned;
+  config[key] = cleaned;
 }
 
 async function readRepoConfig(configPath: string): Promise<RepoConfig> {
@@ -308,17 +319,9 @@ async function readRepoConfig(configPath: string): Promise<RepoConfig> {
   validateWorkflowContinuationConfig(raw, configPath);
   validateExtraWorkflowSources(raw, configPath);
   validateModelBindingConfig(raw, configPath);
-  const parsed = raw as RepoConfig;
-  const recommendedWorkflows = sanitizeRecommendedWorkflows(
-    (parsed as { recommendedWorkflows?: unknown }).recommendedWorkflows,
-    configPath
-  );
-  if (recommendedWorkflows !== undefined) {
-    parsed.recommendedWorkflows = recommendedWorkflows;
-  } else {
-    delete parsed.recommendedWorkflows;
-  }
-  return parsed;
+  sanitizeWorkflowNameList(raw, 'recommendedWorkflows', configPath);
+  sanitizeWorkflowNameList(raw, 'autoReadWorkflows', configPath);
+  return raw as RepoConfig;
 }
 
 /**

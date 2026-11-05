@@ -177,7 +177,8 @@ CREATE TABLE IF NOT EXISTS remote_agent_workflow_runs (
   last_activity_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   working_path TEXT,
   output_root TEXT,
-  checkout_baseline JSONB
+  checkout_baseline JSONB,
+  read_at TIMESTAMP WITH TIME ZONE
 );
 
 COMMENT ON TABLE remote_agent_workflow_runs IS
@@ -374,6 +375,27 @@ ALTER TABLE remote_agent_workflow_runs
 ALTER TABLE remote_agent_workflow_runs
   ADD COLUMN IF NOT EXISTS outcome VARCHAR(20)
     CHECK (outcome IN ('succeeded', 'failed'));
+
+-- Console read state: the last time anyone marked this run's result read through
+-- the API, install-wide. A terminal run is unread while this is NULL or older than
+-- completed_at. The step that adds the column marks every existing terminal run
+-- read as of its completion, so an upgrade does not turn history unread; it runs
+-- only when the column is missing, so it never re-marks later runs. Declared
+-- identically on SQLite (sqlite.ts) as TEXT.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'remote_agent_workflow_runs'
+      AND column_name = 'read_at'
+  ) THEN
+    ALTER TABLE remote_agent_workflow_runs ADD COLUMN read_at TIMESTAMP WITH TIME ZONE;
+    UPDATE remote_agent_workflow_runs SET read_at = COALESCE(completed_at, NOW())
+      WHERE status IN ('completed', 'failed', 'cancelled');
+  END IF;
+END;
+$$;
 
 -- From PR-C: per-user GitHub user-to-server tokens (device flow), encrypted at rest.
 -- One row per Archon user; cascades on user deletion. github_user_id is the

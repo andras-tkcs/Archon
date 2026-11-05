@@ -149,6 +149,7 @@ describe('workflow run config', () => {
       'streaming',
       'concurrency',
       'recommendedWorkflows',
+      'autoReadWorkflows',
     ]) {
       expect(() =>
         parseWorkflowRunConfig({ [key]: {} }, { kind: 'http', label: 'inline' })
