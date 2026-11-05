@@ -345,6 +345,18 @@ function childrenBlockAttention(runId: string, gate: ApprovalContext): RunAttent
   return { kind: 'blocked_on_children', runId, nodeId: gate.nodeId, childRunIds: gate.childRunIds };
 }
 
+/** The run-attention `approve`/`respond` on that run can answer. */
+export type AnswerableRunAttention = Extract<
+  RunAttention,
+  { kind: 'awaiting_response' | 'attention' }
+>;
+
+export function isAnswerableAttention(
+  attention: RunAttention | null
+): attention is AnswerableRunAttention {
+  return attention?.kind === 'awaiting_response' || attention?.kind === 'attention';
+}
+
 /** The run-attention of a run the attention queue lists. */
 export type QueuedRunAttention = Extract<
   RunAttention,

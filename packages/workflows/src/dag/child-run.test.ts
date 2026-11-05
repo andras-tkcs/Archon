@@ -158,6 +158,28 @@ describe('childPauseReason', () => {
       metadata: {
         approval: { nodeId: 'sub', message: 'blocked', type: 'child_workflow', childRunId: 'gc-1' },
       },
+      expected: { kind: 'nested', childRunIds: ['gc-1'] },
+    },
+    {
+      name: 'blocked on its own fan-out',
+      metadata: {
+        approval: { nodeId: 'fan', message: 'blocked', type: 'fan_out', childRunIds: ['a', 'b'] },
+      },
+      expected: { kind: 'nested', childRunIds: ['a', 'b'] },
+    },
+    {
+      name: 'paused with nothing recorded',
+      metadata: {},
+      expected: {
+        kind: 'unreadable',
+        detail: 'paused with no approval gate and no durable wait recorded',
+      },
+    },
+    {
+      name: 'resolved gate awaiting auto-resume',
+      metadata: {
+        approval: { nodeId: 'gate', message: 'review', type: 'approval', resolved: 'approved' },
+      },
       expected: { kind: 'unfinished' },
     },
   ])('paused child, $name', ({ metadata, expected }) => {

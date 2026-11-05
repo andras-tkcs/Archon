@@ -2528,6 +2528,131 @@ nodes:
     expect(childEventsAfter).toBe(childEventsBefore); // child was NOT re-driven
   });
 
+  it('re-pausing on a child still on its timer keeps the timer message, never an approve instruction', async () => {
+    await writeWorkflow(
+      'child-timer-repause',
+      `
+name: child-timer-repause
+description: child that waits on a timer
+nodes:
+  - id: pause
+    wait:
+      duration_ms: 600000
+`
+    );
+    await writeWorkflow(
+      'parent-timer-repause',
+      `
+name: parent-timer-repause
+description: parent composing a timer-waiting child
+nodes:
+  - id: sub
+    workflow: child-timer-repause
+`
+    );
+
+    const store = new InMemoryStore();
+    const deps = makeDeps(store);
+    const parent = await discover('parent-timer-repause');
+    await executeWorkflow(deps, makePlatform(), 'conv-plat', cwd, parent, 'goal', {
+      conversationId: 'conv-db',
+    });
+    const parentRun = [...store.runs.values()].find(
+      r => r.workflow_name === 'parent-timer-repause'
+    );
+    const child = [...store.runs.values()].find(r => r.workflow_name === 'child-timer-repause');
+    const { resumeAt } = child!.metadata.wait as { resumeAt: string };
+
+    const hydrated = await hydrateResumableRun(deps, (await store.getWorkflowRun(parentRun!.id))!);
+    const platform = makePlatform();
+    await executeWorkflow(
+      deps,
+      platform,
+      'conv-plat',
+      cwd,
+      parent,
+      parentRun!.user_message,
+      { conversationId: 'conv-db' },
+      { ...hydrated! }
+    );
+
+    const repaused = await store.getWorkflowRun(parentRun!.id);
+    expect(repaused?.status).toBe('paused');
+    expect((await store.getWorkflowRun(child!.id))?.status).toBe('paused');
+    const recorded = (repaused?.metadata.approval as { message: string }).message;
+    const sent = (platform.sendMessage as ReturnType<typeof mock>).mock.calls
+      .map(call => (call as unknown[])[1] as string)
+      .filter(text => text.includes('sub-run'))
+      .join('\n');
+    expect(sent).not.toBe('');
+    for (const text of [recorded, sent]) {
+      expect(text).toContain(`resumes automatically at ${resumeAt}`);
+      expect(text.toLowerCase()).not.toContain('approve');
+    }
+  });
+
+  it('a parent whose child is blocked on a gated grandchild names the grandchild and claims no automatic resume', async () => {
+    await writeWorkflow(
+      'leaf-gated',
+      `
+name: leaf-gated
+description: grandchild with an approval gate
+nodes:
+  - id: review-gate
+    approval:
+      message: "review the leaf"
+`
+    );
+    await writeWorkflow(
+      'middle-composes-leaf',
+      `
+name: middle-composes-leaf
+description: child composing the gated grandchild
+nodes:
+  - id: leaf
+    workflow: leaf-gated
+`
+    );
+    await writeWorkflow(
+      'top-composes-middle',
+      `
+name: top-composes-middle
+description: parent composing the middle child
+nodes:
+  - id: middle
+    workflow: middle-composes-leaf
+`
+    );
+
+    const store = new InMemoryStore();
+    const platform = makePlatform();
+    await executeWorkflow(
+      makeDeps(store),
+      platform,
+      'conv-plat',
+      cwd,
+      await discover('top-composes-middle'),
+      'goal',
+      { conversationId: 'conv-db' }
+    );
+
+    const top = [...store.runs.values()].find(r => r.workflow_name === 'top-composes-middle');
+    const middle = [...store.runs.values()].find(r => r.workflow_name === 'middle-composes-leaf');
+    const leaf = [...store.runs.values()].find(r => r.workflow_name === 'leaf-gated');
+    expect(top?.status).toBe('paused');
+    expect(middle?.status).toBe('paused');
+    expect(leaf?.status).toBe('paused');
+
+    const recorded = (top?.metadata.approval as { message: string }).message;
+    expect(recorded).toContain(`is blocked on its own sub-run \`${leaf!.id}\``);
+    expect(recorded).not.toContain('automatically');
+    const topNotice = (platform.sendMessage as ReturnType<typeof mock>).mock.calls
+      .map(call => (call as unknown[])[1] as string)
+      .find(text => text.includes('**Blocked on sub-run** `middle-composes-leaf`'));
+    expect(topNotice).toContain(recorded);
+    expect(topNotice?.toLowerCase()).not.toContain('approve');
+  });
+
   it.each([false, true])(
     'awaits source disposal without hiding an unknown target (cleanup failure=%s)',
     async cleanupFails => {

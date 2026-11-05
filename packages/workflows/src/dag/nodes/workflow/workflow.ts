@@ -309,8 +309,8 @@ export async function executeWorkflowNode(
 
 /**
  * The parent's recorded block message (surface-neutral) and its chat notice. Only a
- * child gate `approve`/`respond` can answer gets the approve instruction; any other
- * pause resumes by itself, so the notice says when instead.
+ * child gate `approve`/`respond` can answer gets the approve instruction, and only a
+ * pause the engine resumes by itself says so.
  */
 function childBlockMessages(
   workflow: string,
@@ -318,34 +318,60 @@ function childBlockMessages(
   reason: ChildPauseReason
 ): { message: string; notice: (surface: WorkflowCommandSurface) => string } {
   const label = `Sub-run \`${workflow}\` (run \`${childRunId.slice(0, 8)}\`)`;
-  let message: string;
+  const blockedNotice = (message: string): string =>
+    `⏸ **Blocked on sub-run** \`${workflow}\`: ${message}`;
+  const waitingNotice = (message: string): string =>
+    `⏳ **Waiting on sub-run** \`${workflow}\`: ${message}`;
+  const fixed = (message: string, notice: (message: string) => string) => ({
+    message,
+    notice: () => notice(message),
+  });
   switch (reason.kind) {
     case 'answerable': {
       const blocked = `${label} is paused awaiting review.`;
       return {
         message: blocked,
         notice: surface =>
-          `⏸ **Blocked on sub-run** \`${workflow}\`: ${blocked} Approve it by run id: \`${spellWorkflowCommand(surface, `approve ${childRunId}`)}\``,
+          blockedNotice(
+            `${blocked} Approve it by run id: \`${spellWorkflowCommand(surface, `approve ${childRunId}`)}\``
+          ),
       };
     }
+    case 'nested':
+      return fixed(
+        `${label} is blocked on its own sub-run${reason.childRunIds.length === 1 ? '' : 's'} ${reason.childRunIds.map(id => `\`${id}\``).join(', ')}; that run decides when this one continues.`,
+        blockedNotice
+      );
+    case 'unreadable':
+      return fixed(
+        `${label} is paused in a state that needs operator inspection: ${reason.detail}.`,
+        blockedNotice
+      );
     case 'time':
-      message = `${label} is waiting on its timer and resumes automatically at ${reason.resumeAt}.`;
-      break;
+      return fixed(
+        `${label} is waiting on its timer and resumes automatically at ${reason.resumeAt}.`,
+        waitingNotice
+      );
     case 'event':
-      message = `${label} is waiting for event \`${reason.event}\` and resumes automatically when it arrives or at ${reason.resumeAt}.`;
-      break;
+      return fixed(
+        `${label} is waiting for event \`${reason.event}\` and resumes automatically when it arrives or at ${reason.resumeAt}.`,
+        waitingNotice
+      );
     case 'quota':
-      message = `${label} is waiting out a provider usage or rate limit and resumes automatically at ${reason.resumeAt}.`;
-      break;
+      return fixed(
+        `${label} is waiting out a provider usage or rate limit and resumes automatically at ${reason.resumeAt}.`,
+        waitingNotice
+      );
     case 'unfinished':
-      message = `${label} has not finished yet; this run continues automatically when it does.`;
-      break;
+      return fixed(
+        `${label} has not finished yet; this run continues automatically when it does.`,
+        waitingNotice
+      );
     default: {
       const unreachable: never = reason;
       throw new Error(`Unhandled sub-run pause reason: ${JSON.stringify(unreachable)}`);
     }
   }
-  return { message, notice: () => `⏳ **Waiting on sub-run** \`${workflow}\`: ${message}` };
 }
 
 function resolveChildArguments(node: WorkflowNode, ctx: RunLayersContext, executionNodeId: string) {

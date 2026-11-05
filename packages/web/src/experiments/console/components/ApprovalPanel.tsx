@@ -46,7 +46,8 @@ export function ApprovalPanel({ run }: ApprovalPanelProps): ReactElement {
       attention.kind === 'blocked_on_child' ? [attention.childRunId] : attention.childRunIds;
     return (
       <p className="mt-2 rounded border border-warning/30 bg-warning/[0.06] p-3 text-[12px] text-warning">
-        Waiting on sub-runs: {childRunIds.join(', ')}. Review the child runs to continue.
+        Waiting on sub-runs: {childRunIds.join(', ')}. Open each child run to see what it is waiting
+        on.
       </p>
     );
   }

@@ -1,4 +1,5 @@
 import {
+  isAnswerableAttention,
   pendingWorkflowWaitDeadline,
   readSubrunMetadata,
   runAttention,
@@ -36,11 +37,14 @@ export interface ChildWorkflowOutcome extends RunUsageFigures {
 
 /**
  * Why an unfinished child is not done, as its blocked parent describes it. Only
- * `answerable` is a pause `approve`/`respond` on the child can answer; every other kind
- * resumes without anyone acting on the child.
+ * `answerable` is a pause `approve`/`respond` on the child can answer. `nested` and
+ * `unreadable` need someone to act elsewhere or inspect; every other kind resumes
+ * without anyone acting on the child.
  */
 export type ChildPauseReason =
   | { kind: 'answerable' }
+  | { kind: 'nested'; childRunIds: readonly string[] }
+  | { kind: 'unreadable'; detail: string }
   | { kind: 'time'; resumeAt: string }
   | { kind: 'event'; event: string; resumeAt: string }
   | { kind: 'quota'; resumeAt: string }
@@ -53,8 +57,14 @@ export type ChildPauseReason =
  */
 export function childPauseReason(run: WorkflowRun): ChildPauseReason {
   const attention = runAttention(run);
-  if (attention?.kind === 'awaiting_response' || attention?.kind === 'attention') {
-    return { kind: 'answerable' };
+  if (isAnswerableAttention(attention)) return { kind: 'answerable' };
+  switch (attention?.kind) {
+    case 'blocked_on_child':
+      return { kind: 'nested', childRunIds: [attention.childRunId] };
+    case 'blocked_on_children':
+      return { kind: 'nested', childRunIds: attention.childRunIds };
+    case 'unreadable':
+      return { kind: 'unreadable', detail: attention.detail };
   }
   const wait = pendingWorkflowWaitDeadline(run);
   switch (wait?.kind) {

@@ -286,8 +286,8 @@ describe('toRun — approval parsing', () => {
       );
       expect(run.approval?.message).toBe(
         childRunId
-          ? `Waiting on sub-run ${childRunId}. Review the child run to continue.`
-          : 'Waiting on a sub-run. Review the child run to continue.'
+          ? `Waiting on sub-run ${childRunId}. Open the child run to see what it is waiting on.`
+          : 'Waiting on a sub-run. Open the child run to see what it is waiting on.'
       );
       expect(run.approval?.message).not.toContain('/workflow');
       expect(run.approval?.message).not.toContain('legacy-prose-id');
