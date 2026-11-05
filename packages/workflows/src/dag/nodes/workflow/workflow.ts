@@ -28,7 +28,12 @@ import { substituteWorkflowVariables } from '../../../workflow-variables';
 import { safeSendMessage } from '../../../platform-messages';
 import { getLog } from '../../log';
 import { executeFanOutWorkflowNode } from './fan-out';
-import { childOutcomeFromRun, type ChildWorkflowOutcome } from '../../child-run';
+import {
+  childOutcomeFromRun,
+  childPauseReason,
+  type ChildPauseReason,
+  type ChildWorkflowOutcome,
+} from '../../child-run';
 import { RunSourceUnreadableError } from '../../node-source';
 import { beginExecution, type RunLayersContext } from '../../run-context';
 import {
@@ -182,10 +187,11 @@ export async function executeWorkflowNode(
   // — the block reason lives on the run itself (metadata.approval), and there
   // is no human decision to audit for a gate that resolves automatically on
   // child completion.
-  const pauseParentOnChild = async (childRunId: string): Promise<NodeExecutionResult> => {
-    const blocked = `Sub-run \`${node.workflow}\` (run \`${childRunId.slice(0, 8)}\`) is paused awaiting review. `;
-    const approveChild = (surface: WorkflowCommandSurface): string =>
-      `${blocked}Approve it by run id: \`${spellWorkflowCommand(surface, `approve ${childRunId}`)}\``;
+  const pauseParentOnChild = async (
+    childRunId: string,
+    reason: ChildPauseReason
+  ): Promise<NodeExecutionResult> => {
+    const { message, notice } = childBlockMessages(node.workflow, childRunId, reason);
     const suspended = finishNodeExecution(
       execution,
       { status: 'suspended', point: 'child_workflow' },
@@ -198,7 +204,7 @@ export async function executeWorkflowNode(
           deps,
           parentRun.id,
           {
-            message: blocked.trimEnd(),
+            message,
             nodeId: executionNodeId,
             type: 'child_workflow',
             childRunId,
@@ -207,12 +213,7 @@ export async function executeWorkflowNode(
         );
         if (!paused) return serializeNodeOutput(execution);
         await recordDerivedExecution({ logDir: ctx.logDir }, suspended);
-        await safeSendMessage(
-          platform,
-          conversationId,
-          `⏸ **Blocked on sub-run** \`${node.workflow}\`: ${approveChild(platform)}`,
-          msgContext
-        );
+        await safeSendMessage(platform, conversationId, notice(platform), msgContext);
         return serializeNodeOutput(suspended);
       },
       () => serializeNodeOutput(execution)
@@ -229,7 +230,8 @@ export async function executeWorkflowNode(
       case 'completed':
         return await asCompleted(outcome);
       case 'paused':
-        return pauseParentOnChild(outcome.childRunId);
+        // Only a hand-built outcome lacks `pause`; `unfinished` never asks anyone to approve.
+        return pauseParentOnChild(outcome.childRunId, outcome.pause ?? { kind: 'unfinished' });
       case 'failed':
         return failResult(
           outcome.error ?? `Sub-run '${node.workflow}' failed`,
@@ -285,7 +287,7 @@ export async function executeWorkflowNode(
     if (LIVE_CHILD_STATUSES.includes(existing.status)) {
       // Still in progress (awaiting a human or a concurrent run). Re-pause the
       // parent; NEVER resume a paused child.
-      return await pauseParentOnChild(existing.id);
+      return await pauseParentOnChild(existing.id, childPauseReason(existing));
     }
     // completed / cancelled — thread the outcome through the same state table a
     // freshly-run child uses (interpret handles both).
@@ -303,6 +305,47 @@ export async function executeWorkflowNode(
       'child_failed'
     );
   }
+}
+
+/**
+ * The parent's recorded block message (surface-neutral) and its chat notice. Only a
+ * child gate `approve`/`respond` can answer gets the approve instruction; any other
+ * pause resumes by itself, so the notice says when instead.
+ */
+function childBlockMessages(
+  workflow: string,
+  childRunId: string,
+  reason: ChildPauseReason
+): { message: string; notice: (surface: WorkflowCommandSurface) => string } {
+  const label = `Sub-run \`${workflow}\` (run \`${childRunId.slice(0, 8)}\`)`;
+  let message: string;
+  switch (reason.kind) {
+    case 'answerable': {
+      const blocked = `${label} is paused awaiting review.`;
+      return {
+        message: blocked,
+        notice: surface =>
+          `⏸ **Blocked on sub-run** \`${workflow}\`: ${blocked} Approve it by run id: \`${spellWorkflowCommand(surface, `approve ${childRunId}`)}\``,
+      };
+    }
+    case 'time':
+      message = `${label} is waiting on its timer and resumes automatically at ${reason.resumeAt}.`;
+      break;
+    case 'event':
+      message = `${label} is waiting for event \`${reason.event}\` and resumes automatically when it arrives or at ${reason.resumeAt}.`;
+      break;
+    case 'quota':
+      message = `${label} is waiting out a provider usage or rate limit and resumes automatically at ${reason.resumeAt}.`;
+      break;
+    case 'unfinished':
+      message = `${label} has not finished yet; this run continues automatically when it does.`;
+      break;
+    default: {
+      const unreachable: never = reason;
+      throw new Error(`Unhandled sub-run pause reason: ${JSON.stringify(unreachable)}`);
+    }
+  }
+  return { message, notice: () => `⏳ **Waiting on sub-run** \`${workflow}\`: ${message}` };
 }
 
 function resolveChildArguments(node: WorkflowNode, ctx: RunLayersContext, executionNodeId: string) {

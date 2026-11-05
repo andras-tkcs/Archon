@@ -1,4 +1,10 @@
-import { readSubrunMetadata, type WorkflowNode, type WorkflowRun } from '../schemas';
+import {
+  pendingWorkflowWaitDeadline,
+  readSubrunMetadata,
+  runAttention,
+  type WorkflowNode,
+  type WorkflowRun,
+} from '../schemas';
 import { parseRunUsage } from '../schemas/run-usage';
 import type { RunUsageFigures } from '../schemas/run-usage';
 import type { DeclaredOutputPaths, JsonValue } from '../output-ref';
@@ -24,6 +30,42 @@ export interface ChildWorkflowOutcome extends RunUsageFigures {
    */
   declaredOutputPaths?: DeclaredOutputPaths;
   error?: string;
+  /** Why the child is not done; set by `childOutcomeFromRun` for every paused child. */
+  pause?: ChildPauseReason;
+}
+
+/**
+ * Why an unfinished child is not done, as its blocked parent describes it. Only
+ * `answerable` is a pause `approve`/`respond` on the child can answer; every other kind
+ * resumes without anyone acting on the child.
+ */
+export type ChildPauseReason =
+  | { kind: 'answerable' }
+  | { kind: 'time'; resumeAt: string }
+  | { kind: 'event'; event: string; resumeAt: string }
+  | { kind: 'quota'; resumeAt: string }
+  | { kind: 'unfinished' };
+
+/**
+ * Classify an unfinished child from its row. Answerability comes from `runAttention`,
+ * the same projection `approve` consults, so the parent never names a command the child
+ * would refuse.
+ */
+export function childPauseReason(run: WorkflowRun): ChildPauseReason {
+  const attention = runAttention(run);
+  if (attention?.kind === 'awaiting_response' || attention?.kind === 'attention') {
+    return { kind: 'answerable' };
+  }
+  const wait = pendingWorkflowWaitDeadline(run);
+  switch (wait?.kind) {
+    case 'time':
+    case 'quota':
+      return { kind: wait.kind, resumeAt: wait.resumeAt };
+    case 'event':
+      return { kind: 'event', event: wait.event, resumeAt: wait.resumeAt };
+    case undefined:
+      return { kind: 'unfinished' };
+  }
 }
 
 /** Arguments for starting (or resuming a failed) child sub-run. */
@@ -119,6 +161,7 @@ export function childOutcomeFromRun(run: WorkflowRun): ChildWorkflowOutcome {
       : {}),
     ...childRunUsage(run),
     error: typeof md.error === 'string' ? md.error : undefined,
+    ...(run.status === 'paused' ? { pause: childPauseReason(run) } : {}),
   };
 }
 

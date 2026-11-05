@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { childOutcomeFromRun } from './child-run';
+import { childOutcomeFromRun, childPauseReason } from './child-run';
 import type { WorkflowRun } from '../schemas';
 
-function settledRun(metadata: Record<string, unknown>): WorkflowRun {
+function settledRun(
+  metadata: Record<string, unknown>,
+  status: WorkflowRun['status'] = 'completed'
+): WorkflowRun {
   return {
     origin: { conversationId: 'conv-child' },
     id: 'child-1',
@@ -10,7 +13,7 @@ function settledRun(metadata: Record<string, unknown>): WorkflowRun {
     conversation_id: 'conv-child',
     parent_conversation_id: null,
     codebase_id: null,
-    status: 'completed',
+    status,
     outcome: null,
     user_message: 'child input',
     metadata,
@@ -114,5 +117,63 @@ describe('childOutcomeFromRun historical required counters', () => {
     );
     expect(zero.tokens).toEqual({ input: 0, output: 0 });
     expect(zero.tokensUnknown).toBeUndefined();
+  });
+});
+
+describe('childPauseReason', () => {
+  const since = '2026-11-05T10:00:00.000Z';
+  const resumeAt = '2026-11-05T10:10:00.000Z';
+  const owner = { owner: 'node', nodeId: 'pause' };
+
+  it.each([
+    {
+      name: 'open approval gate',
+      metadata: { approval: { nodeId: 'gate', message: 'review', type: 'approval' } },
+      expected: { kind: 'answerable' },
+    },
+    {
+      name: 'unanswered attention wait',
+      metadata: { wait: { ...owner, kind: 'attention', waitingSince: since, message: 'which?' } },
+      expected: { kind: 'answerable' },
+    },
+    {
+      name: 'time wait',
+      metadata: { wait: { ...owner, kind: 'time', waitingSince: since, resumeAt } },
+      expected: { kind: 'time', resumeAt },
+    },
+    {
+      name: 'event wait',
+      metadata: {
+        wait: { ...owner, kind: 'event', waitingSince: since, resumeAt, event: 'pr.merged' },
+      },
+      expected: { kind: 'event', event: 'pr.merged', resumeAt },
+    },
+    {
+      name: 'usage-limit wait',
+      metadata: { wait: { ...owner, kind: 'quota', pauseId: 'p1', waitingSince: since, resumeAt } },
+      expected: { kind: 'quota', resumeAt },
+    },
+    {
+      name: 'blocked on its own sub-run',
+      metadata: {
+        approval: { nodeId: 'sub', message: 'blocked', type: 'child_workflow', childRunId: 'gc-1' },
+      },
+      expected: { kind: 'unfinished' },
+    },
+  ])('paused child, $name', ({ metadata, expected }) => {
+    expect(childPauseReason(settledRun(metadata, 'paused'))).toEqual(expected);
+  });
+
+  it('a running child is unfinished', () => {
+    expect(childPauseReason(settledRun({}, 'running'))).toEqual({ kind: 'unfinished' });
+  });
+
+  it('childOutcomeFromRun carries the reason for a paused child only', () => {
+    const wait = { ...owner, kind: 'time', waitingSince: since, resumeAt };
+    expect(childOutcomeFromRun(settledRun({ wait }, 'paused')).pause).toEqual({
+      kind: 'time',
+      resumeAt,
+    });
+    expect(childOutcomeFromRun(settledRun({})).pause).toBeUndefined();
   });
 });

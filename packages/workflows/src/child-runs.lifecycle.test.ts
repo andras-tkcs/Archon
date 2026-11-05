@@ -1697,6 +1697,74 @@ nodes:
     expect((parentRun?.metadata.approval as { message: string }).message).not.toContain(
       'archon workflow '
     );
+    expect((parentRun?.metadata.approval as { message: string }).message).toContain(
+      'is paused awaiting review.'
+    );
+  });
+
+  it('a child paused on a timed wait: the parent says it resumes automatically and never asks for approval', async () => {
+    await writeWorkflow(
+      'child-timed-wait',
+      `
+name: child-timed-wait
+description: child that waits on a timer
+nodes:
+  - id: pause
+    wait:
+      duration_ms: 600000
+`
+    );
+    await writeWorkflow(
+      'parent-timed-wait',
+      `
+name: parent-timed-wait
+description: parent composing a timer-waiting child
+nodes:
+  - id: sub
+    workflow: child-timed-wait
+`
+    );
+
+    const store = new InMemoryStore();
+    const platform = {
+      ...makePlatform(),
+      formatWorkflowCommand: (command: string) => `/archon-workflow ${command}`,
+    };
+    await executeWorkflow(
+      makeDeps(store),
+      platform,
+      'conv-plat',
+      cwd,
+      await discover('parent-timed-wait'),
+      'goal',
+      { conversationId: 'conv-db' }
+    );
+
+    const parentRun = [...store.runs.values()].find(r => r.workflow_name === 'parent-timed-wait');
+    const child = [...store.runs.values()].find(r => r.workflow_name === 'child-timed-wait');
+    expect(child?.status).toBe('paused');
+    const wait = child!.metadata.wait as { kind: string; resumeAt: string };
+    expect(wait.kind).toBe('time');
+
+    // The parent's own state is the same blocked-on-child gate an approval child produces,
+    // so resume and re-inspection are unchanged; only the words differ.
+    expect(parentRun?.status).toBe('paused');
+    expect(parentRun?.metadata.approval).toMatchObject({
+      type: 'child_workflow',
+      nodeId: 'sub',
+      childRunId: child!.id,
+    });
+    const recorded = (parentRun?.metadata.approval as { message: string }).message;
+    const sent = (platform.sendMessage as ReturnType<typeof mock>).mock.calls
+      .map(call => (call as unknown[])[1] as string)
+      .filter(text => text.includes('sub-run'))
+      .join('\n');
+    for (const text of [recorded, sent]) {
+      expect(text).toContain('timer');
+      expect(text).toContain(`resumes automatically at ${wait.resumeAt}`);
+      expect(text.toLowerCase()).not.toContain('approve');
+      expect(text).not.toContain('awaiting review');
+    }
   });
 
   it('child gate → parent pauses blocked-on-child → approve child → parent auto-resumes → output threads', async () => {
