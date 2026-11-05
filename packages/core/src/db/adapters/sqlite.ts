@@ -553,7 +553,8 @@ export class SqliteAdapter implements IDatabase {
         last_activity_at TEXT DEFAULT (datetime('now')),
         working_path TEXT,
         output_root TEXT,
-        checkout_baseline TEXT
+        checkout_baseline TEXT,
+        read_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS remote_agent_state_revisions (

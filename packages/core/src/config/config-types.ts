@@ -209,6 +209,16 @@ export interface GlobalConfig {
 
   /** Operator policy for live tool attention and quota continuation. */
   workflows?: WorkflowContinuationConfig;
+
+  /**
+   * Workflow names whose top-level runs open as read in the console, for launches
+   * the system cannot recognise as non-human on its own. Each entry is an exact
+   * stored workflow name (`tkcs-lab/devflow:devflow-plan`) or a prefix ending in `*`
+   * (`tkcs-lab/devflow:*`). Global entries apply to every run; repository entries
+   * apply to that repository's runs, and the two are unioned. Advisory: invalid
+   * entries are dropped.
+   */
+  autoReadWorkflows?: string[];
 }
 
 // Ordinary global/repo config remains forward-compatible: unlike the explicitly
@@ -300,6 +310,16 @@ export interface RepoConfig {
    * discovered workflow are silently ignored (advisory).
    */
   recommendedWorkflows?: string[];
+
+  /**
+   * Workflow names whose top-level runs open as read in the console, for launches
+   * the system cannot recognise as non-human on its own. Each entry is an exact
+   * stored workflow name (`tkcs-lab/devflow:devflow-plan`) or a prefix ending in `*`
+   * (`tkcs-lab/devflow:*`). Global entries apply to every run; repository entries
+   * apply to that repository's runs, and the two are unioned. Advisory: invalid
+   * entries are dropped.
+   */
+  autoReadWorkflows?: string[];
 
   /**
    * Default commands/workflows configuration

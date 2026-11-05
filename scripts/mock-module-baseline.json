@@ -2975,7 +2975,6 @@
       "isInstalledPackWorkflow",
       "listConversations",
       "listEnvVarKeys",
-      "listGlobalCounts",
       "listMessages",
       "listOpencodeCredentials",
       "listPiModels",

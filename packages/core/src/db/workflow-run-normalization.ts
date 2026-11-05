@@ -34,6 +34,7 @@ export type WorkflowRunRow = Omit<WorkflowRun, RawRunColumn> & {
   completed_at: string | Date | null;
   last_activity_at: string | Date | null;
   checkout_baseline: unknown;
+  read_at?: unknown;
 };
 
 /** A JSON object column as either dialect returns it (text or parsed); null otherwise. */
@@ -57,6 +58,11 @@ function getLog(): ReturnType<typeof createLogger> {
   return cachedLog;
 }
 
+type ExtraRunColumns<T extends WorkflowRunRow> = Omit<
+  T,
+  RawRunColumn | 'conversation_id' | 'parent_conversation_id' | 'user_id' | 'read_at'
+>;
+
 /**
  * Normalize a workflow-run row from the database into a public `WorkflowRun`, keeping
  * any extra projected columns, without rewriting stored values. Metadata that is not a
@@ -66,11 +72,15 @@ function getLog(): ReturnType<typeof createLogger> {
  */
 export function normalizeWorkflowRun<T extends WorkflowRunRow>(
   row: T
-): Omit<T, RawRunColumn | 'conversation_id' | 'parent_conversation_id' | 'user_id'> & WorkflowRun {
+): ExtraRunColumns<T> & WorkflowRun {
   const status = readWorkflowRunStatus(row.id, row.status);
   const origin = readWorkflowRunOrigin(row);
+  // Read state is a console concern answered by dedicated queries; it never rides on a run.
+  const { read_at: _readAt, ...columns } = row;
   return {
-    ...row,
+    // Omit<T, 'read_at'> keeps every key ExtraRunColumns<T> keeps; TypeScript cannot
+    // relate two Omits of a generic, so the widening is stated.
+    ...(columns as ExtraRunColumns<T>),
     status,
     metadata: readMetadata(row),
     checkout_baseline: readCheckoutBaseline(row),

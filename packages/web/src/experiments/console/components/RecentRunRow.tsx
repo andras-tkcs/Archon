@@ -6,6 +6,7 @@ import { shortRunId, formatElapsed, elapsedSince, formatCost } from '../lib/form
 import { useIsDocker, useIdeEnv, openInIde } from '../lib/health';
 import { statusTextClass } from '../lib/run-status';
 import { RunOutcomeBadge } from './RunOutcomeBadge';
+import { UNREAD_BG_CLASS } from '../lib/unread';
 
 interface RecentRunRowProps {
   run: Run;
@@ -86,6 +87,14 @@ export function RecentRunRow({
         {run.status}
       </span>
       <RunOutcomeBadge outcome={run.outcome} />
+      {run.unread === true ? (
+        <span
+          title="Unread result"
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${UNREAD_BG_CLASS}`}
+        >
+          <span className="sr-only">Unread result</span>
+        </span>
+      ) : null}
     </span>
   );
 

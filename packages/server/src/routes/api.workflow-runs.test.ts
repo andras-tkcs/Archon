@@ -7,6 +7,10 @@ import {
   mockListProviderEvents,
   mockGetConversationById,
   mockObserveRunOwner,
+  mockLoadAutoReadRules,
+  mockSummarizeUnreadRuns,
+  mockListUnreadCandidateIds,
+  mockMarkWorkflowRunRead,
   type MockWorkflowRun,
   type MockWorkflowEvent,
   NOW_DATE,
@@ -697,6 +701,86 @@ describe('GET /api/workflows/runs/:runId', () => {
 // ---------------------------------------------------------------------------
 // Tests: GET /api/dashboard/runs
 // ---------------------------------------------------------------------------
+
+describe('console read state routes', () => {
+  const summary = {
+    byStatus: { all: 3, pending: 0, running: 0, completed: 1, failed: 2, cancelled: 0, paused: 0 },
+    byCodebase: { 'cb-uuid-1': 3 },
+    total: 3,
+  };
+
+  beforeEach(() => {
+    mockListDashboardRuns.mockReset();
+    mockSummarizeUnreadRuns.mockClear();
+    mockListUnreadCandidateIds.mockClear();
+    mockMarkWorkflowRunRead.mockClear();
+  });
+
+  test('the dashboard reports unread counts under its filters and the unread page rows', async () => {
+    const autoRead = { ...MOCK_FAILED_RUN, id: 'run-auto', workflow_name: 'deploy-nightly' };
+    mockListDashboardRuns.mockImplementationOnce(async () =>
+      makeDashboardRunsResult({
+        runs: [
+          makeDashboardWorkflowRun(MOCK_COMPLETED_RUN),
+          makeDashboardWorkflowRun(MOCK_FAILED_RUN),
+          makeDashboardWorkflowRun(autoRead),
+        ],
+      })
+    );
+    mockLoadAutoReadRules.mockImplementationOnce(async () => ({
+      global: ['deploy-*'],
+      byCodebase: new Map(),
+    }));
+    mockSummarizeUnreadRuns.mockImplementationOnce(async () => summary);
+    mockListUnreadCandidateIds.mockImplementationOnce(
+      async () => new Set([MOCK_FAILED_RUN.id, autoRead.id])
+    );
+
+    const { app } = makeApp();
+    const response = await app.request('/api/dashboard/runs?codebaseId=cb-1&status=failed');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { unread: unknown; unreadRunIds: string[] };
+
+    expect(body.unread).toEqual(summary.byStatus);
+    expect(body.unreadRunIds).toEqual([MOCK_FAILED_RUN.id]);
+    expect(mockSummarizeUnreadRuns.mock.calls[0]?.[0]).toEqual({
+      codebaseId: 'cb-1',
+      search: undefined,
+      after: undefined,
+      before: undefined,
+    });
+    expect(mockListUnreadCandidateIds.mock.calls[0]?.[0]).toEqual([
+      MOCK_COMPLETED_RUN.id,
+      MOCK_FAILED_RUN.id,
+      autoRead.id,
+    ]);
+  });
+
+  test('GET /api/dashboard/unread returns the total and per-project counts', async () => {
+    mockSummarizeUnreadRuns.mockImplementationOnce(async () => summary);
+    const { app } = makeApp();
+    const response = await app.request('/api/dashboard/unread');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ total: 3, byProject: { 'cb-uuid-1': 3 } });
+    expect(mockSummarizeUnreadRuns.mock.calls[0]?.[0]).toEqual({});
+  });
+
+  test('POST /api/workflows/runs/:runId/read marks the run read', async () => {
+    mockMarkWorkflowRunRead.mockImplementationOnce(async () => true);
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/runs/run-uuid-2/read', { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, message: 'Marked read' });
+    expect(mockMarkWorkflowRunRead.mock.calls[0]?.[0]).toBe('run-uuid-2');
+  });
+
+  test('POST /api/workflows/runs/:runId/read answers 404 for an unknown run', async () => {
+    mockMarkWorkflowRunRead.mockImplementationOnce(async () => false);
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/runs/missing/read', { method: 'POST' });
+    expect(response.status).toBe(404);
+  });
+});
 
 describe('GET /api/dashboard/runs', () => {
   beforeEach(() => {

@@ -74,6 +74,8 @@ describe('run responses', () => {
       ],
       total: 1,
       counts: { all: 1, running: 0, completed: 1, failed: 0, cancelled: 0, pending: 0, paused: 0 },
+      unread: { all: 1, running: 0, completed: 1, failed: 0, cancelled: 0, pending: 0, paused: 0 },
+      unreadRunIds: [dashboardRun.id],
     };
     respond(response);
     const result = await listRuns();
@@ -83,9 +85,14 @@ describe('run responses', () => {
       activeNodes: ['a', 'b'],
       workerPlatformId: null,
       terminalRecord: null,
+      unread: true,
     });
     expect(result.counts).toEqual(response.counts);
+    expect(result.unread).toEqual(response.unread);
     expect(result.total).toBe(1);
+
+    respond({ ...response, unreadRunIds: [] });
+    expect((await listRuns()).runs[0]?.unread).toBe(false);
   });
 });
 

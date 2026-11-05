@@ -2,7 +2,16 @@ import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import * as conversationDb from '@archon/core/db/conversations';
 import * as workflowDb from '@archon/core/db/workflows';
 import * as workflowEventDb from '@archon/core/db/workflow-events';
+import {
+  listUnreadCandidateIds,
+  markWorkflowRunRead,
+} from '@archon/core/db/workflow-run-read-state';
 import { observeRunOwner } from '@archon/core/services/run-attention-watch';
+import {
+  loadAutoReadRules,
+  summarizeUnreadRuns,
+  unreadRunIdsOf,
+} from '@archon/core/services/run-read-state';
 import { createWorkflowStore } from '@archon/core/workflows/store-adapter';
 import { nodeCostScope } from '@archon/workflows/node-record-serialization';
 import { buildRunNodeStates, getTerminalRecord } from '@archon/workflows/terminal-record';
@@ -12,9 +21,11 @@ import { toApiDashboardWorkflowRun, toApiWorkflowRun } from './api-serializers';
 import {
   dashboardRunsQuerySchema,
   dashboardRunsResponseSchema,
+  dashboardUnreadResponseSchema,
   providerEventsQuerySchema,
   providerEventsResponseSchema,
   workflowRunByWorkerResponseSchema,
+  workflowRunActionResponseSchema,
   workflowRunDetailSchema,
   workflowRunListResponseSchema,
   workflowRunStatusSchema,
@@ -32,6 +43,36 @@ const getDashboardRunsRoute = createRoute({
       content: { 'application/json': { schema: dashboardRunsResponseSchema } },
       description: 'OK',
     },
+    500: jsonError('Server error'),
+  },
+});
+
+const getDashboardUnreadRoute = createRoute({
+  method: 'get',
+  path: '/api/dashboard/unread',
+  tags: ['Workflows'],
+  summary: 'Count finished runs whose result is unread, in total and per project',
+  responses: {
+    200: {
+      content: { 'application/json': { schema: dashboardUnreadResponseSchema } },
+      description: 'OK',
+    },
+    500: jsonError('Server error'),
+  },
+});
+
+const markWorkflowRunReadRoute = createRoute({
+  method: 'post',
+  path: '/api/workflows/runs/{runId}/read',
+  tags: ['Workflows'],
+  summary: "Mark a run's current result read for everyone on this install",
+  request: { params: z.object({ runId: z.string() }) },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: workflowRunActionResponseSchema } },
+      description: 'Marked read',
+    },
+    404: jsonError('Not found'),
     500: jsonError('Server error'),
   },
 });
@@ -134,6 +175,11 @@ export function registerDashboardRunsRoute(app: OpenAPIHono): void {
         limit,
         offset,
       });
+      const rules = await loadAutoReadRules();
+      const [unread, candidates] = await Promise.all([
+        summarizeUnreadRuns({ codebaseId, search, after, before }, rules),
+        listUnreadCandidateIds(result.runs.map(run => run.id)),
+      ]);
       const store = createWorkflowStore();
       return c.json({
         ...result,
@@ -142,10 +188,35 @@ export function registerDashboardRunsRoute(app: OpenAPIHono): void {
             toApiDashboardWorkflowRun(run, await observeRunOwner(store, run))
           )
         ),
+        unread: unread.byStatus,
+        unreadRunIds: unreadRunIdsOf(result.runs, candidates, rules),
       });
     } catch (error) {
       getLog().error({ err: error }, 'list_dashboard_runs_failed');
       return apiError(c, 500, 'Failed to list dashboard runs');
+    }
+  });
+
+  // GET /api/dashboard/unread - Unread finished runs for the project rail
+  registerOpenApiRoute(getDashboardUnreadRoute, async c => {
+    try {
+      const { total, byCodebase } = await summarizeUnreadRuns({}, await loadAutoReadRules());
+      return c.json({ total, byProject: byCodebase });
+    } catch (error) {
+      getLog().error({ err: error }, 'dashboard_unread_failed');
+      return apiError(c, 500, 'Failed to count unread runs');
+    }
+  });
+
+  // POST /api/workflows/runs/:runId/read - Mark the run's current result read
+  registerOpenApiRoute(markWorkflowRunReadRoute, async c => {
+    const runId = c.req.param('runId') ?? '';
+    try {
+      if (!(await markWorkflowRunRead(runId))) return apiError(c, 404, 'Workflow run not found');
+      return c.json({ success: true, message: 'Marked read' });
+    } catch (error) {
+      getLog().error({ err: error, runId }, 'mark_workflow_run_read_failed');
+      return apiError(c, 500, 'Failed to mark workflow run read');
     }
   });
 }

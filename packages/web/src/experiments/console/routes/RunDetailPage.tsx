@@ -24,7 +24,7 @@ import { providerEventStore, useRunProviderEvents } from '../lib/provider-events
 import { useEntity, invalidate } from '../store/cache';
 import { K } from '../store/keys';
 import * as skill from '../skills';
-import { runMessageConversationId } from '../primitives/run';
+import { runMessageConversationId, type Run } from '../primitives/run';
 import { isRunLive } from '../lib/run-status';
 import { foldNodeRuns } from '../primitives/event';
 import type { Message } from '../primitives/message';
@@ -185,6 +185,36 @@ function useRunDetailKeymap({
 }
 
 /**
+ * Mark the run read once its result exists: on opening a finished run, and again
+ * when a run watched here finishes (including after a resume). Waiting for the
+ * terminal status keeps `read_at` at or after `completed_at`, so a result the
+ * operator has not seen is never hidden. A failed mark leaves the run unread.
+ */
+function useMarkFinishedRunRead(
+  runId: string | undefined,
+  run: Pick<Run, 'status' | 'finishedAt'> | undefined
+): void {
+  const markedRef = useRef<string | null>(null);
+  const status = run?.status;
+  const finishedAt = run?.finishedAt ?? null;
+  useEffect(() => {
+    if (runId === undefined || runId.startsWith('demo-')) return;
+    if (status !== 'completed' && status !== 'failed' && status !== 'cancelled') return;
+    const result = `${runId}:${status}:${finishedAt ?? ''}`;
+    if (markedRef.current === result) return;
+    markedRef.current = result;
+    skill.markRunRead(runId).then(
+      () => {
+        invalidate('runs');
+      },
+      (error: unknown) => {
+        console.warn('[console] could not mark run read', runId, error);
+      }
+    );
+  }, [runId, status, finishedAt]);
+}
+
+/**
  * The run, its project, conversation messages and artifact list, kept fresh by
  * SSE plus a heartbeat refetch while the run is live.
  */
@@ -246,6 +276,8 @@ function useRunDetailData(runId: string | undefined) {
       clearInterval(id);
     };
   }, [runId, status, conversationPlatformId]);
+
+  useMarkFinishedRunRead(runId, detail?.run);
 
   // Surface the artifact count on the tab even when the user hasn't visited
   // the panel yet. Cheap call — the server walks one directory.

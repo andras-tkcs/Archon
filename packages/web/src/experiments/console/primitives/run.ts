@@ -57,6 +57,8 @@ export interface Run {
   workingPath: string | null;
   userMessage: string;
   activeNodes: string[];
+  /** The run's finished result is unread. Reported only by the dashboard feed. */
+  unread?: boolean;
   lastTool?: string | null;
   toolCallAttention?: NonNullable<WorkflowRunMetadata['tool_call_attention']>;
   /**

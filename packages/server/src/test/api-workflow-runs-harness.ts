@@ -477,6 +477,48 @@ mock.module('@archon/core/services/run-attention-watch', () => ({
   observeRunOwner: mockObserveRunOwner,
 }));
 
+// Read state reads config and the database; tests answer both here. The matching of
+// auto-read rules against runs stays real.
+import * as runReadStateModule from '@archon/core/services/run-read-state';
+import * as runReadStateDbModule from '@archon/core/db/workflow-run-read-state';
+const realRunReadState = { ...runReadStateModule };
+const realRunReadStateDb = { ...runReadStateDbModule };
+const emptyUnreadSummary = (): runReadStateModule.UnreadRunSummary => ({
+  byStatus: {
+    all: 0,
+    pending: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+    paused: 0,
+  },
+  byCodebase: {},
+  total: 0,
+});
+export const mockLoadAutoReadRules = mock<typeof runReadStateModule.loadAutoReadRules>(
+  async () => ({ global: [], byCodebase: new Map() })
+);
+export const mockSummarizeUnreadRuns = mock<typeof runReadStateModule.summarizeUnreadRuns>(
+  async () => emptyUnreadSummary()
+);
+mock.module('@archon/core/services/run-read-state', () => ({
+  ...realRunReadState,
+  loadAutoReadRules: mockLoadAutoReadRules,
+  summarizeUnreadRuns: mockSummarizeUnreadRuns,
+}));
+export const mockListUnreadCandidateIds = mock<typeof runReadStateDbModule.listUnreadCandidateIds>(
+  async () => new Set()
+);
+export const mockMarkWorkflowRunRead = mock<typeof runReadStateDbModule.markWorkflowRunRead>(
+  async () => true
+);
+mock.module('@archon/core/db/workflow-run-read-state', () => ({
+  ...realRunReadStateDb,
+  listUnreadCandidateIds: mockListUnreadCandidateIds,
+  markWorkflowRunRead: mockMarkWorkflowRunRead,
+}));
+
 mock.module('@archon/core/workflows/resolve-run-workflow', () => ({
   resolveRunWorkflow: mockResolveRunWorkflow,
 }));

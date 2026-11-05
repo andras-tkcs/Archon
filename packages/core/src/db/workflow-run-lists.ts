@@ -64,10 +64,10 @@ function dashboardStatuses(
 }
 
 /**
- * Build WHERE clauses shared between the list and count queries.
- * Returns the clauses array and values array (mutated in place).
+ * Build the dashboard's filter WHERE clauses, shared by its list and count queries
+ * and the unread-state queries. Returns the clauses; `values` is extended in place.
  */
-function buildDashboardWhereClauses(
+export function buildDashboardWhereClauses(
   options: ListDashboardRunsOptions | undefined,
   values: unknown[]
 ): string[] {
