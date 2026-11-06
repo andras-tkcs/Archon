@@ -402,26 +402,31 @@ describe('the snapshot store', () => {
     expect(snapshot?.dir.startsWith(generations + sep)).toBe(true);
   });
 
-  test('a sync that published still succeeds when removing old staging fails', async () => {
-    const { project, home } = await createRepository();
-    process.env.ARCHON_HOME = home;
-    const dir = await extraSourceDir(project, PLANS);
-    const stuck = join(dir, 'staging', 'abandoned');
-    await mkdir(join(stuck, 'locked'), { recursive: true });
-    await writeFile(join(stuck, 'locked', 'file'), 'x');
-    await chmod(join(stuck, 'locked'), 0o500);
-    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    await utimes(stuck, old, old);
-    try {
-      await pushPlan(project, 'plan v2');
-      const result = await syncExtraSource(project, PLANS);
-      expect(result.commit).toBe(await git(project, 'rev-parse', 'plans'));
-      const snapshot = await readExtraSourceSnapshot(project, PLANS);
-      expect(snapshot?.meta.commit).toBe(result.commit);
-    } finally {
-      await chmod(join(stuck, 'locked'), 0o700);
+  // A read-only directory is how this test makes removal fail; Windows ignores POSIX
+  // modes and root ignores them too, so there removal succeeds and nothing is exercised.
+  test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'a sync that published still succeeds when removing old staging fails',
+    async () => {
+      const { project, home } = await createRepository();
+      process.env.ARCHON_HOME = home;
+      const dir = await extraSourceDir(project, PLANS);
+      const stuck = join(dir, 'staging', 'abandoned');
+      await mkdir(join(stuck, 'locked'), { recursive: true });
+      await writeFile(join(stuck, 'locked', 'file'), 'x');
+      await chmod(join(stuck, 'locked'), 0o500);
+      const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(stuck, old, old);
+      try {
+        await pushPlan(project, 'plan v2');
+        const result = await syncExtraSource(project, PLANS);
+        expect(result.commit).toBe(await git(project, 'rev-parse', 'plans'));
+        const snapshot = await readExtraSourceSnapshot(project, PLANS);
+        expect(snapshot?.meta.commit).toBe(result.commit);
+      } finally {
+        await chmod(join(stuck, 'locked'), 0o700);
+      }
     }
-  });
+  );
 });
 
 describe('the config entry', () => {
