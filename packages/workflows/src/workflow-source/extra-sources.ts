@@ -5,6 +5,7 @@ import { execFileAsync, getCanonicalRepoPath, GitFailure } from '@archon/git';
 import * as archonPaths from '@archon/paths';
 import { z } from 'zod';
 import type { ExtraWorkflowSource } from '../schemas/run-metadata';
+import { getLog } from './log';
 
 /**
  * Workflows read from a git ref of the project's own repository.
@@ -183,6 +184,15 @@ async function git(projectRoot: string, args: string[], call: GitCall): Promise<
     });
     return stdout;
   } catch (error) {
+    // execFile reports output beyond maxBuffer as a RangeError holding that output.
+    if (error instanceof RangeError) {
+      throw new ExtraSourceSyncError(
+        call.source,
+        call.step,
+        call.failure(' (git output exceeded the size limit)'),
+        error
+      );
+    }
     if (!(error instanceof GitFailure)) throw error;
     const exit = typeof error.code === 'number' ? ` (git exit code ${error.code})` : '';
     throw new ExtraSourceSyncError(call.source, call.step, call.failure(exit), error);
@@ -481,7 +491,10 @@ export async function syncExtraSource(
     const pointer = join(dir, `${POINTER_FILE}.${generation}.tmp`);
     await writeFile(pointer, `${generation}\n`);
     await rename(pointer, join(dir, POINTER_FILE));
-    await prune(dir, generation, previous);
+    // The snapshot is published; a failed cleanup leaves only extra directories behind.
+    await prune(dir, generation, previous).catch((error: unknown) => {
+      getLog().warn({ err: error, dir }, 'workflow.extra_source_prune_failed');
+    });
     return { source, commit, fetched, files: entries.length };
   });
 }

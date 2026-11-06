@@ -7,7 +7,7 @@ import { execFileAsync, GitFailure } from '@archon/git';
 import { providerRegistry } from '@archon/providers';
 import { readBundleIndex } from './defaults/bundle-inventory';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mkdir, mkdtemp, readdir, readFile, symlink, utimes, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, symlink, utimes, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { dirname, join, sep } from 'path';
 
@@ -175,6 +175,28 @@ describe('a failed sync', () => {
     // Git's own output stays available as evidence on the cause.
     expect(failure.cause).toBeInstanceOf(GitFailure);
     expect((failure.cause as GitFailure).stderr).toContain('querySecret');
+  });
+
+  test('a file larger than the read limit fails without carrying its content', async () => {
+    const { project, home } = await createRepository();
+    process.env.ARCHON_HOME = home;
+    await git(project, 'checkout', '-q', 'plans');
+    const marker = 'largeFileContent';
+    await writeFile(join(project, 'workflows', 'big.yaml'), marker.repeat(600_000));
+    await git(project, 'add', '.');
+    await git(project, 'commit', '-q', '-m', 'big');
+    await git(project, 'checkout', '-q', 'main');
+
+    const error = await syncExtraSource(project, PLANS).then(
+      () => undefined,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(ExtraSourceSyncError);
+    const failure = error as ExtraSourceSyncError;
+    expect(failure.step).toBe('read');
+    expect(failure.message).toContain('exceeded the size limit');
+    expect(failure.message).not.toContain(marker);
   });
 });
 
@@ -378,6 +400,27 @@ describe('the snapshot store', () => {
     expect(kept.length).toBe(2);
     const snapshot = await readExtraSourceSnapshot(project, PLANS);
     expect(snapshot?.dir.startsWith(generations + sep)).toBe(true);
+  });
+
+  test('a sync that published still succeeds when removing old staging fails', async () => {
+    const { project, home } = await createRepository();
+    process.env.ARCHON_HOME = home;
+    const dir = await extraSourceDir(project, PLANS);
+    const stuck = join(dir, 'staging', 'abandoned');
+    await mkdir(join(stuck, 'locked'), { recursive: true });
+    await writeFile(join(stuck, 'locked', 'file'), 'x');
+    await chmod(join(stuck, 'locked'), 0o500);
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await utimes(stuck, old, old);
+    try {
+      await pushPlan(project, 'plan v2');
+      const result = await syncExtraSource(project, PLANS);
+      expect(result.commit).toBe(await git(project, 'rev-parse', 'plans'));
+      const snapshot = await readExtraSourceSnapshot(project, PLANS);
+      expect(snapshot?.meta.commit).toBe(result.commit);
+    } finally {
+      await chmod(join(stuck, 'locked'), 0o700);
+    }
   });
 });
 

@@ -49,6 +49,15 @@ export type { WorkflowSourceRoots } from './workflow-source';
 
 export { isValidWorkflowFolderSegment } from './packaged-workflow';
 
+/** Live roots read the project's configured extra sources; a capture carries its own. */
+function withExtraSources(
+  roots: WorkflowSourceRoots,
+  extraSources: readonly ExtraWorkflowSource[] | undefined
+): WorkflowSourceRoots {
+  if (roots.kind !== 'live' || !extraSources?.length) return roots;
+  return { ...roots, config: { ...roots.config, extra_sources: [...extraSources] } };
+}
+
 /**
  * Discover and load workflows from codebase.
  *
@@ -63,15 +72,6 @@ export { isValidWorkflowFolderSegment } from './packaged-workflow';
  * When running as a compiled binary, bundled defaults are loaded from embedded
  * content. In source/dev mode they're loaded from the filesystem.
  */
-/** Live roots read the project's configured extra sources; a capture carries its own. */
-function withExtraSources(
-  roots: WorkflowSourceRoots,
-  extraSources: readonly ExtraWorkflowSource[] | undefined
-): WorkflowSourceRoots {
-  if (roots.kind !== 'live' || !extraSources?.length) return roots;
-  return { ...roots, config: { ...roots.config, extra_sources: [...extraSources] } };
-}
-
 export async function discoverWorkflows(
   cwd: string | null,
   options: {
