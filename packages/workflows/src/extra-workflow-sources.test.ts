@@ -26,7 +26,7 @@ mock.module('@archon/paths', () => ({
   getBundledWorkflowsPath: () => bundledDefaultsRoot,
 }));
 
-import { captureWorkflowSource, capturedSourceRoots } from './workflow-source';
+import { captureWorkflowSource, capturedSourceRoots, liveSourceRoots } from './workflow-source';
 import {
   ExtraSourceNotSyncedError,
   ExtraSourceSyncError,
@@ -34,7 +34,7 @@ import {
   syncExtraSource,
 } from './workflow-source/extra-sources';
 import { extraWorkflowSourceSchema, type ExtraWorkflowSource } from './schemas/run-metadata';
-import { discoverWorkflows } from './workflow-discovery';
+import { discoverWorkflows, discoverWorkflowsWithConfig } from './workflow-discovery';
 import { removeTempTree, trackTempRoots } from '@archon/paths/test-utils';
 
 const trackTempRoot = trackTempRoots();
@@ -257,6 +257,24 @@ describe('discovery from an extra source', () => {
 
     expect(result.workflows.find(entry => entry.workflow.name === 'plan')).toBeUndefined();
     expect(result.errors.map(error => error.error).join('\n')).toContain('archon workflow sync');
+  });
+
+  test('a linked worktree that reads source from the project lists the configured source', async () => {
+    const { project, home } = await createRepository();
+    process.env.ARCHON_HOME = home;
+    const worktree = join(dirname(project), 'worktree');
+    await git(project, 'worktree', 'add', '-q', '-b', 'feature', worktree);
+    await syncExtraSource(project, PLANS);
+
+    const result = await discoverWorkflowsWithConfig(
+      worktree,
+      () => Promise.resolve({ extraWorkflowSources: [PLANS] }),
+      providerRegistry,
+      liveSourceRoots(project)
+    );
+
+    expect(result.workflows.map(entry => entry.workflow.name)).toContain('plan');
+    expect(result.errors).toEqual([]);
   });
 
   test('a project with no extra sources behaves as before', async () => {
