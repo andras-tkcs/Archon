@@ -170,6 +170,17 @@ extraWorkflowSources:
       );
     });
 
+    test('repo config refuses a refspec as the ref', async () => {
+      mockFsReadFile.mockResolvedValue(`
+extraWorkflowSources:
+  - ref: "+refs/heads/plans:refs/heads/release"
+`);
+
+      await expect(loadRepoConfig('/test/repo')).rejects.toThrow(
+        /extraWorkflowSources.*0\.ref.*not a refspec/
+      );
+    });
+
     test('repo config refuses an entry with an unknown key', async () => {
       mockFsReadFile.mockResolvedValue(`
 extraWorkflowSources:

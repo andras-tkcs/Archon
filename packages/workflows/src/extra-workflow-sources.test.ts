@@ -191,6 +191,27 @@ describe('the config entry', () => {
       expect(extraWorkflowSourceSchema.safeParse(bad).success).toBe(false);
     }
   });
+
+  test('refuses a refspec as the ref, which could move a local branch', () => {
+    for (const ref of [
+      'src:dst',
+      'plans:release',
+      '+refs/heads/plans:refs/heads/release',
+      '+plans',
+      'refs/heads/*',
+      ':plans',
+    ]) {
+      const parsed = extraWorkflowSourceSchema.safeParse({ ref });
+      expect(parsed.success).toBe(false);
+      expect(parsed.error?.issues[0]?.message).toContain('not a refspec');
+    }
+  });
+
+  test('accepts a branch, a tag, a full ref and a commit', () => {
+    for (const ref of ['plans', 'v1.2.0', 'refs/heads/x', 'refs/tags/v1', 'a'.repeat(40)]) {
+      expect(extraWorkflowSourceSchema.parse({ ref })).toEqual({ ref, path: '.' });
+    }
+  });
 });
 
 describe('discovery from an extra source', () => {

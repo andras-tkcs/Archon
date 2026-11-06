@@ -393,9 +393,11 @@ export const extraWorkflowSourceSchema = z
       .string()
       .trim()
       .min(1)
+      // A refspec (`src:dst`, a leading `+`, a `*` pattern) would let a sync move or
+      // force-update a local ref. No ref name or commit can contain ":" or "*".
       .refine(
-        ref => !ref.startsWith('-') && !/\s/.test(ref),
-        'ref must not start with "-" or contain whitespace'
+        ref => !/^[-+]/.test(ref) && !/[\s:*]/.test(ref),
+        'ref must be a single branch, tag, ref or commit, not a refspec (no leading "-" or "+", no ":", "*" or whitespace)'
       ),
     path: z
       .string()

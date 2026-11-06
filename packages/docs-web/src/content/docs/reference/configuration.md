@@ -470,8 +470,10 @@ extraWorkflowSources:
     path: .
 ```
 
-- `ref` is a branch or tag. `path` is the directory in the ref that holds a `workflows/`
-  folder, relative to the repository root. It defaults to `.`. Commands and scripts are
+- `ref` is a single branch, tag, full ref such as `refs/heads/plans`, or commit. It is not
+  a refspec: a leading `-` or `+`, `:`, `*` and whitespace are refused. `path` is the
+  directory in the ref that holds a `workflows/` folder, relative to the repository root.
+  It defaults to `.`. Commands and scripts are
   not read from a ref; a workflow's command and script nodes resolve from the project,
   global and bundled scopes as usual.
 - Extra-source workflows are project workflows. They load after the global scope and before the
