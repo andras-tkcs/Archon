@@ -8,7 +8,8 @@
  *   the loader; subsequent subscribers read from cache. After `invalidate()`
  *   or `refetch()`, any key with an active subscriber reloads automatically.
  * - `patch` and `set` are for the SSE dispatcher and skill-layer optimistic
- *   updates only.
+ *   updates only. A `set` is newer than any load already in flight for the
+ *   key, so that load's result is dropped rather than overwriting it.
  * - After the last unsubscribe, `cache`/`errors` are deliberately retained so
  *   a remount reads warm; only the per-key version counter is released.
  *   `invalidate()` fully releases subscriber-less keys.
@@ -89,6 +90,7 @@ export function get(key: string): unknown {
 }
 
 export function set(key: string, value: unknown): void {
+  latestLoad.delete(key);
   cache.set(key, value);
   errors.delete(key);
   notify(key);

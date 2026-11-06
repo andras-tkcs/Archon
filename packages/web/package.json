@@ -72,6 +72,9 @@
     ],
     [
       "src/experiments/SubscriptionLoginFlow.test.tsx"
+    ],
+    [
+      "src/experiments/WorkflowSourcesDialog.test.tsx"
     ]
   ]
 }

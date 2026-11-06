@@ -165,7 +165,7 @@ Performs a soft delete -- the conversation is hidden but not destroyed.
 | PUT | `/api/codebases/{id}/env` | Set or update a codebase environment variable |
 | DELETE | `/api/codebases/{id}/env/{key}` | Delete a codebase environment variable |
 | GET | `/api/codebases/{id}/extra-sources` | List the project's `extraWorkflowSources` and the commit each was last synced to |
-| POST | `/api/codebases/{id}/sync` | Fetch the project's `extraWorkflowSources` and replace their snapshots. A run never does this; it uses the last snapshot |
+| POST | `/api/codebases/{id}/sync` | Fetch the project's `extraWorkflowSources` and replace their snapshots, stopping at the first failure. Returns `{ ok, sources }`, where each source has an `outcome` of `synced`, `failed` (with `error`) or `not_attempted`. An invalid `extraWorkflowSources` config is a 422 on this route and on `extra-sources`. A run never does this; it uses the last snapshot |
 
 ### List Codebases
 

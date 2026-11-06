@@ -65,11 +65,13 @@ function apiErrorFields(body: string): Pick<HttpError, 'serverError' | 'serverDe
 }
 
 /**
- * The server's own message from a failed request: apiError's `{ error, detail? }`
- * body. `bodySnippet` is capped (see HttpError), so a long body may not parse;
- * the raw snippet is the fallback.
+ * The server's own message from a failed request: apiError's full `error` and
+ * `detail`. A body that is not apiError JSON falls back to the capped snippet.
  */
 export function serverErrorMessage(err: HttpError): string {
+  if (err.serverError !== undefined) {
+    return err.serverDetail ? `${err.serverError}: ${err.serverDetail}` : err.serverError;
+  }
   let message = err.bodySnippet || `Request failed (${String(err.status)})`;
   try {
     const parsed = JSON.parse(err.bodySnippet) as { error?: string; detail?: string };

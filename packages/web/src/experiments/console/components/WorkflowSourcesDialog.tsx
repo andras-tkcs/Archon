@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
+import { errorDetail } from '../lib/http';
 import * as skill from '../skills';
 import { useEntity, invalidate, set as setCached } from '../store/cache';
 import { K } from '../store/keys';
@@ -68,6 +69,22 @@ function shortCommit(commit: string): string {
   return commit.slice(0, 12);
 }
 
+function sourceLabel(source: { ref: string; path: string }): string {
+  return source.path === '.' ? source.ref : `${source.ref}:${source.path}`;
+}
+
+/** The lines a sync that did not complete shows: each failure, then what was skipped. */
+function syncFailureLines(report: skill.ExtraSourcesSyncReport): string[] {
+  const lines = report.sources.flatMap(source =>
+    source.outcome === 'failed' ? [`${sourceLabel(source)}: ${source.error ?? 'sync failed'}`] : []
+  );
+  const skipped = report.sources.filter(source => source.outcome === 'not_attempted');
+  if (skipped.length > 0) {
+    lines.push(`Not attempted: ${skipped.map(sourceLabel).join(', ')}`);
+  }
+  return lines;
+}
+
 function SourcesBody({ projectId, projectName, onClose }: BodyProps): ReactElement {
   // Drop the cache on every open so the dialog shows what the CLI or another session
   // synced since, not whatever was in memory last time.
@@ -83,15 +100,19 @@ function SourcesBody({ projectId, projectName, onClose }: BodyProps): ReactEleme
     skill.listExtraSources(projectId)
   );
   const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string[] | null>(null);
 
   const sync = async (): Promise<void> => {
     setSyncError(null);
     setSyncing(true);
     try {
-      setCached(K.extraSources(projectId), await skill.syncExtraSources(projectId));
+      const report = await skill.syncExtraSources(projectId);
+      setCached(K.extraSources(projectId), report.sources);
+      if (!report.ok) setSyncError(syncFailureLines(report));
     } catch (err: unknown) {
-      setSyncError(err instanceof Error ? err.message : 'Failed to sync workflow sources.');
+      setSyncError([errorDetail(err)]);
+      // A failed request may still have synced some sources before it stopped.
+      invalidate(K.extraSources(projectId));
     } finally {
       setSyncing(false);
     }
@@ -119,7 +140,9 @@ function SourcesBody({ projectId, projectName, onClose }: BodyProps): ReactEleme
       {loading ? (
         <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
       ) : error !== undefined ? (
-        <p className="font-mono text-[11px] text-error">{error.message}</p>
+        <p role="alert" className="mb-3 break-words font-mono text-[11px] text-error">
+          {errorDetail(error)}
+        </p>
       ) : (
         <ul
           className="mb-3 max-h-[40vh] divide-y divide-border overflow-y-auto rounded-[11px] border bg-surface"
@@ -136,8 +159,7 @@ function SourcesBody({ projectId, projectName, onClose }: BodyProps): ReactEleme
                 className="flex items-center justify-between gap-3 p-2 pl-3"
               >
                 <span className="truncate font-mono text-[13px] text-text-primary">
-                  {source.ref}
-                  {source.path === '.' ? '' : `:${source.path}`}
+                  {sourceLabel(source)}
                 </span>
                 <span className="shrink-0 font-mono text-[12px] text-text-tertiary">
                   {source.snapshot === null
@@ -153,9 +175,11 @@ function SourcesBody({ projectId, projectName, onClose }: BodyProps): ReactEleme
       )}
 
       {syncError !== null ? (
-        <p role="alert" className="mb-3 break-words font-mono text-[11px] text-error">
-          {syncError}
-        </p>
+        <div role="alert" className="mb-3 break-words font-mono text-[11px] text-error">
+          {syncError.map(line => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
       ) : null}
 
       <div className="flex items-center justify-end gap-2">

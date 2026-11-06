@@ -66,8 +66,10 @@ describe('extra workflow sources from the project config', () => {
     const [synced] = await syncConfiguredExtraSources(project);
     const [listed] = await listExtraSources(project);
 
-    expect(synced?.commit).toBe(await git(project, 'rev-parse', 'plans'));
-    expect(listed?.snapshot?.commit).toBe(synced?.commit);
+    const commit = await git(project, 'rev-parse', 'plans');
+    expect(synced?.sync.outcome === 'synced' && synced.sync.result.commit).toBe(commit);
+    expect(synced?.snapshot?.commit).toBe(commit);
+    expect(listed?.snapshot?.commit).toBe(commit);
   });
 
   test('a project that configures none lists and syncs nothing', async () => {
@@ -78,6 +80,27 @@ describe('extra workflow sources from the project config', () => {
 
   test('a configured ref that does not exist fails the sync and names the ref', async () => {
     const project = await createProject('extraWorkflowSources:\n  - ref: nope\n');
-    await expect(syncConfiguredExtraSources(project)).rejects.toThrow(/"nope"/);
+    const [entry] = await syncConfiguredExtraSources(project);
+    expect(entry?.sync.outcome).toBe('failed');
+    expect(entry?.sync.outcome === 'failed' && String(entry.sync.error)).toMatch(/"nope"/);
+    expect(entry?.snapshot).toBeNull();
+  });
+
+  test('a failure reports what was synced before it and what was never attempted', async () => {
+    const project = await createProject(
+      'extraWorkflowSources:\n  - ref: plans\n  - ref: nope\n  - ref: plans\n    path: site\n'
+    );
+
+    const entries = await syncConfiguredExtraSources(project);
+
+    expect(entries.map(entry => [entry.source.ref, entry.source.path, entry.sync.outcome])).toEqual(
+      [
+        ['plans', '.', 'synced'],
+        ['nope', '.', 'failed'],
+        ['plans', 'site', 'not_attempted'],
+      ]
+    );
+    expect(entries[0]?.snapshot?.commit).toBe(await git(project, 'rev-parse', 'plans'));
+    expect(entries[2]?.snapshot).toBeNull();
   });
 });

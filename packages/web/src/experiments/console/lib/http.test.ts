@@ -39,6 +39,13 @@ describe('requestJson errors', () => {
     expect(error.serverError).toBe(message);
   });
 
+  test('errorDetail shows the full error and detail beyond the snippet cap', async () => {
+    const detail = `Could not fetch "plans" from remote "origin" ${'x'.repeat(250)}-DETAIL-TAIL`;
+    respond(500, JSON.stringify({ error: 'Failed to sync extra workflow sources', detail }));
+
+    expect(errorDetail(await caught())).toBe(`Failed to sync extra workflow sources: ${detail}`);
+  });
+
   test('preserves full apiError detail independently of the snippet', async () => {
     const detail = `No codebase with id ${'x'.repeat(250)}-DETAIL-TAIL`;
     respond(400, JSON.stringify({ error: 'Codebase not found', detail }));
