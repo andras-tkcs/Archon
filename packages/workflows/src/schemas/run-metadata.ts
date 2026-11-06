@@ -2,7 +2,7 @@
  * Keys the engine writes into a run row's untyped `metadata` JSONB, each with the typed
  * reader that is the only way to read it back.
  */
-import { isAbsolute } from 'path';
+import { isAbsolute, posix } from 'path';
 import { z } from 'zod';
 // A value import with no runtime cycle: output-ref imports from schemas only as types.
 import {
@@ -411,7 +411,10 @@ export const extraWorkflowSourceSchema = z
           !/^[A-Za-z]:/.test(path) &&
           !path.split('/').includes('..'),
         'path must be relative to the repository root and stay inside it'
-      ),
+      )
+      // One spelling per directory, so `./site`, `site/` and `site` select the same
+      // files and share one snapshot.
+      .transform(path => posix.normalize(path).replace(/\/+$/, '') || '.'),
   })
   .strict();
 
