@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { execFileAsync } from '@archon/git';
+import { execFileAsync, GitFailure } from '@archon/git';
 import * as archonPaths from '@archon/paths';
 import { z } from 'zod';
 import type { ExtraWorkflowSource } from '../schemas/run-metadata';
@@ -57,6 +57,32 @@ export class ExtraSourceNotSyncedError extends Error {
   }
 }
 
+/** The operation a failed sync was performing. */
+export type ExtraSourceSyncStep = 'fetch' | 'resolve' | 'list' | 'read' | 'validate';
+
+/**
+ * A sync of one extra source failed. Archon writes the message itself from the
+ * configured ref and path, a remote name and paths inside the ref, so it is safe to show
+ * and log. Git's own output, which can echo a remote URL with its credentials, is kept
+ * only on `cause`.
+ */
+export class ExtraSourceSyncError extends Error {
+  /** Git's exit code when a git command failed. */
+  readonly gitExitCode: number | undefined;
+
+  constructor(
+    readonly source: ExtraWorkflowSource,
+    readonly step: ExtraSourceSyncStep,
+    message: string,
+    cause?: unknown
+  ) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = 'ExtraSourceSyncError';
+    this.gitExitCode =
+      cause instanceof GitFailure && typeof cause.code === 'number' ? cause.code : undefined;
+  }
+}
+
 function hashOf(...parts: string[]): string {
   return createHash('sha256').update(parts.join('\0')).digest('hex');
 }
@@ -104,11 +130,26 @@ export interface ExtraSourceSyncResult {
   files: number;
 }
 
-async function git(projectRoot: string, args: string[], maxBuffer?: number): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['-C', projectRoot, ...args], {
-    ...(maxBuffer ? { maxBuffer } : {}),
-  });
-  return stdout;
+interface GitCall {
+  source: ExtraWorkflowSource;
+  step: ExtraSourceSyncStep;
+  /** The error message, given git's exit code as text such as ` (git exit code 128)`. */
+  failure: (exit: string) => string;
+  maxBuffer?: number;
+}
+
+/** Every git command of a sync runs here, so none of git's output reaches a message. */
+async function git(projectRoot: string, args: string[], call: GitCall): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', projectRoot, ...args], {
+      ...(call.maxBuffer ? { maxBuffer: call.maxBuffer } : {}),
+    });
+    return stdout;
+  } catch (error) {
+    if (!(error instanceof GitFailure)) throw error;
+    const exit = typeof error.code === 'number' ? ` (git exit code ${error.code})` : '';
+    throw new ExtraSourceSyncError(call.source, call.step, call.failure(exit), error);
+  }
 }
 
 /**
@@ -123,37 +164,37 @@ async function resolveCommit(
 ): Promise<{ commit: string; fetched: boolean }> {
   let hasRemote = true;
   try {
-    await git(projectRoot, ['remote', 'get-url', remote]);
+    await execFileAsync('git', ['-C', projectRoot, 'remote', 'get-url', remote]);
   } catch {
     hasRemote = false;
   }
   if (hasRemote) {
-    try {
-      await git(projectRoot, ['fetch', '--quiet', '--no-tags', remote, source.ref]);
-    } catch (error) {
-      throw new Error(
-        `Could not fetch "${source.ref}" from remote "${remote}" for an extra workflow source: ` +
-          (error as Error).message,
-        { cause: error }
-      );
-    }
+    await git(projectRoot, ['fetch', '--quiet', '--no-tags', remote, source.ref], {
+      source,
+      step: 'fetch',
+      failure: exit =>
+        `Could not fetch "${source.ref}" from remote "${remote}"${exit}. ` +
+        `Run \`git fetch ${remote} ${source.ref}\` in the project to see git's error.`,
+    });
     const commit = (
-      await git(projectRoot, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])
+      await git(projectRoot, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}'], {
+        source,
+        step: 'resolve',
+        failure: exit => `Could not resolve the commit fetched for "${source.ref}"${exit}.`,
+      })
     ).trim();
     return { commit, fetched: true };
   }
-  try {
-    const commit = (
-      await git(projectRoot, ['rev-parse', '--verify', `${source.ref}^{commit}`])
-    ).trim();
-    return { commit, fetched: false };
-  } catch (error) {
-    throw new Error(
-      `Extra workflow source "${source.ref}" does not exist in this repository, which has no ` +
+  const commit = (
+    await git(projectRoot, ['rev-parse', '--verify', `${source.ref}^{commit}`], {
+      source,
+      step: 'resolve',
+      failure: () =>
+        `Extra workflow source "${source.ref}" does not exist in this repository, which has no ` +
         `remote "${remote}" to fetch it from.`,
-      { cause: error }
-    );
-  }
+    })
+  ).trim();
+  return { commit, fetched: false };
 }
 
 interface TreeEntry {
@@ -171,7 +212,12 @@ async function listTree(
   const prefix = source.path === '.' ? '' : `${source.path.replace(/\/+$/, '')}/`;
   const args = ['ls-tree', '-r', '-z', commit];
   if (prefix) args.push('--', prefix);
-  const output = await git(projectRoot, args, 64 * 1024 * 1024);
+  const output = await git(projectRoot, args, {
+    source,
+    step: 'list',
+    failure: exit => `Could not list the files of commit ${commit.slice(0, 12)}${exit}.`,
+    maxBuffer: 64 * 1024 * 1024,
+  });
   const entries: TreeEntry[] = [];
   for (const record of output.split('\0')) {
     if (!record) continue;
@@ -179,7 +225,9 @@ async function listTree(
     const [mode, type, oid] = record.slice(0, tab).split(' ');
     const rel = record.slice(tab + 1).slice(prefix.length);
     if (type !== 'blob' || mode === '120000') {
-      throw new Error(
+      throw new ExtraSourceSyncError(
+        source,
+        'validate',
         `Extra workflow source "${source.ref}" holds ${mode === '120000' ? 'a symlink' : `a ${type}`} ` +
           `at "${prefix}${rel}"; only regular files can be synced.`
       );
@@ -204,7 +252,9 @@ export async function syncExtraSource(
   const { commit, fetched } = await resolveCommit(projectRoot, source, remote);
   const entries = await listTree(projectRoot, commit, source);
   if (!entries.some(entry => entry.rel.startsWith(`${EXTRA_WORKFLOWS_DIR}/`))) {
-    throw new Error(
+    throw new ExtraSourceSyncError(
+      source,
+      'validate',
       `Extra workflow source "${source.ref}" has no "${EXTRA_WORKFLOWS_DIR}/" folder at path ` +
         `"${source.path}" (commit ${commit.slice(0, 12)}).`
     );
@@ -216,9 +266,16 @@ export async function syncExtraSource(
   await rm(staging, { recursive: true, force: true });
   try {
     for (const entry of entries) {
-      const content = await git(projectRoot, ['cat-file', 'blob', entry.oid], MAX_BLOB_BYTES);
+      const content = await git(projectRoot, ['cat-file', 'blob', entry.oid], {
+        source,
+        step: 'read',
+        failure: exit => `Could not read "${entry.rel}" from "${source.ref}"${exit}.`,
+        maxBuffer: MAX_BLOB_BYTES,
+      });
       if (content.includes('\0')) {
-        throw new Error(
+        throw new ExtraSourceSyncError(
+          source,
+          'validate',
           `Extra workflow source "${source.ref}" holds a binary file at "${entry.rel}"; only text ` +
             'files can be synced.'
         );

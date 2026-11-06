@@ -183,7 +183,18 @@ mock.module('@archon/paths', () => ({
 
 mockAllWorkflowModules();
 
+/** Stands in for `@archon/git`'s failure: git's stderr, which can echo a remote URL. */
+class MockGitFailure extends Error {
+  constructor(
+    readonly code: number,
+    readonly stderr: string
+  ) {
+    super(`Command failed: git fetch\n${stderr}`);
+  }
+}
+
 mock.module('@archon/git', () => ({
+  GitFailure: MockGitFailure,
   removeWorktree: mockRemoveWorktree,
   isWorktreeRegistered: mockIsWorktreeRegistered,
   toRepoPath: (p: string) => p,
@@ -1667,23 +1678,40 @@ describe('extra workflow sources', () => {
     expect(response.status).toBe(404);
   });
 
-  test('POST reports a failed sync without leaking a remote URL credential', async () => {
+  test('POST reports a failed sync without leaking remote URL credentials', async () => {
+    const { ExtraSourceSyncError } = await import('@archon/workflows/extra-sources');
+    const gitOutput =
+      "fatal: unable to access 'https://x-access-token:userinfoSecret@github.com/user/repo/" +
+      "?token=querySecret#fragmentSecret'";
     mockGetCodebase.mockImplementationOnce(async () => MOCK_CODEBASE);
     mockSyncExtraSources.mockImplementationOnce(async () => {
-      throw new Error(
-        'Could not fetch "plans" from remote "origin": fatal: unable to access ' +
-          "'https://x-access-token:secret-token@github.com/user/repo/'"
+      throw new ExtraSourceSyncError(
+        { ref: 'plans', path: '.' },
+        'fetch',
+        'Could not fetch "plans" from remote "origin" (git exit code 128).',
+        new MockGitFailure(128, gitOutput)
       );
     });
+    const errorSpy = spyOn(getLog(), 'error').mockClear();
 
     const response = await makeApp().request('/api/codebases/codebase-uuid-1/sync', {
       method: 'POST',
     });
 
     expect(response.status).toBe(500);
-    const body = (await response.json()) as { error: string; detail: string };
+    const text = await response.text();
+    const body = JSON.parse(text) as { error: string; detail: string };
     expect(body.error).toBe('Failed to sync extra workflow sources');
     expect(body.detail).toContain('Could not fetch "plans"');
-    expect(body.detail).not.toContain('secret-token');
+    const logged = JSON.stringify(errorSpy.mock.calls);
+    expect(errorSpy.mock.calls[0]?.[0]).not.toHaveProperty('err');
+    expect(errorSpy.mock.calls).toContainEqual([
+      expect.objectContaining({ codebaseId: 'codebase-uuid-1', step: 'fetch', gitExitCode: 128 }),
+      'codebases.extra_sources_sync_failed',
+    ]);
+    for (const secret of ['userinfoSecret', 'querySecret', 'fragmentSecret']) {
+      expect(text).not.toContain(secret);
+      expect(logged).not.toContain(secret);
+    }
   });
 });

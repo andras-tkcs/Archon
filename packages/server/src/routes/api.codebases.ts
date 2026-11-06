@@ -24,6 +24,7 @@ import {
   syncConfiguredExtraSources,
   type ExtraSourceStatus,
 } from '@archon/core/workflows/extra-sources';
+import { ExtraSourceSyncError } from '@archon/workflows/extra-sources';
 import { remoteIdentity } from '@archon/core/services/project-registration-identity';
 import { detectProjectKind, ProjectKindDetectionError } from '@archon/core/services/project-kind';
 import {
@@ -292,11 +293,6 @@ function toApiExtraSources(statuses: readonly ExtraSourceStatus[]): {
         : null,
     })),
   };
-}
-
-/** A git failure message without any credentials embedded in a remote URL. */
-function withoutUrlCredentials(message: string): string {
-  return message.replace(/(\w+:\/\/)[^/@\s]+@/g, '$1');
 }
 
 async function registerRequestedProject(
@@ -586,13 +582,23 @@ export function registerCodebaseEnvironmentRoute(app: OpenAPIHono): void {
       await syncConfiguredExtraSources(codebase.default_cwd);
       return c.json(toApiExtraSources(await listExtraSources(codebase.default_cwd)));
     } catch (error) {
+      if (error instanceof ExtraSourceSyncError) {
+        // Never `err`: its message is safe, but its cause holds git's stderr, which can
+        // echo a remote URL with credentials.
+        getLog().error(
+          {
+            codebaseId: id,
+            ref: error.source.ref,
+            path: error.source.path,
+            step: error.step,
+            gitExitCode: error.gitExitCode,
+          },
+          'codebases.extra_sources_sync_failed'
+        );
+        return apiError(c, 500, 'Failed to sync extra workflow sources', error.message);
+      }
       getLog().error({ err: error, codebaseId: id }, 'codebases.extra_sources_sync_failed');
-      return apiError(
-        c,
-        500,
-        'Failed to sync extra workflow sources',
-        withoutUrlCredentials(error instanceof Error ? error.message : String(error))
-      );
+      return apiError(c, 500, 'Failed to sync extra workflow sources');
     }
   });
 

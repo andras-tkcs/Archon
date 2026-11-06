@@ -3,7 +3,7 @@
  * Workflows read from a git ref of the project's own repository: syncing a ref into a
  * snapshot, discovering from it, and freezing it into a run's capture.
  */
-import { execFileAsync } from '@archon/git';
+import { execFileAsync, GitFailure } from '@archon/git';
 import { providerRegistry } from '@archon/providers';
 import { readBundleIndex } from './defaults/bundle-inventory';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -29,6 +29,7 @@ mock.module('@archon/paths', () => ({
 import { captureWorkflowSource, capturedSourceRoots } from './workflow-source';
 import {
   ExtraSourceNotSyncedError,
+  ExtraSourceSyncError,
   readExtraSourceSnapshot,
   syncExtraSource,
 } from './workflow-source/extra-sources';
@@ -143,6 +144,36 @@ describe('syncExtraSource', () => {
     await git(project, 'commit', '-q', '-m', 'link');
     await git(project, 'checkout', '-q', 'main');
     await expect(syncExtraSource(project, PLANS)).rejects.toThrow(/symlink/);
+  });
+});
+
+describe('a failed sync', () => {
+  test('keeps credentials in the remote URL out of the error message', async () => {
+    const { project, home } = await createRepository();
+    process.env.ARCHON_HOME = home;
+    // Port 1 refuses the connection, so the fetch fails without any real remote.
+    await git(
+      project,
+      'remote',
+      'add',
+      'origin',
+      'http://user:userinfoSecret@127.0.0.1:1/r?token=querySecret'
+    );
+
+    const error = await syncExtraSource(project, PLANS).then(
+      () => undefined,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(ExtraSourceSyncError);
+    const failure = error as ExtraSourceSyncError;
+    expect(failure.step).toBe('fetch');
+    expect(failure.message).toContain('Could not fetch "plans" from remote "origin"');
+    expect(failure.message).not.toContain('userinfoSecret');
+    expect(failure.message).not.toContain('querySecret');
+    // Git's own output stays available as evidence on the cause.
+    expect(failure.cause).toBeInstanceOf(GitFailure);
+    expect((failure.cause as GitFailure).stderr).toContain('querySecret');
   });
 });
 
