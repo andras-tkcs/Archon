@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Extra workflow source snapshots use a new layout, so a snapshot written by 0.13.4 reads as not synced: run `archon workflow sync` once in each project that configures `extraWorkflowSources` after upgrading. Every worktree of a repository now shares one snapshot per source. A sync reports each source as synced, failed or not attempted through `archon workflow sync`, `POST /api/codebases/{id}/sync` and the console, and an invalid `extraWorkflowSources` entry is a 422 naming the problem.
+
+### Fixed
+
+- An extra workflow source's `ref` refuses refspec syntax (a leading `+`, `:` or `*`), and its `path` is normalized. A sync error or log line no longer carries git's output, which can include a remote URL's credentials. Concurrent syncs of one source, and a reader during a sync, always see one complete snapshot, and a commit's file paths cannot write outside it. A linked worktree's workflow discovery loads the project's configured extra sources.
+
 ## [0.13.4] - 2026-11-04
 
 A project can run workflows kept on another branch of its own repository.
