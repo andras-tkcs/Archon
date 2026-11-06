@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'fs/promises';
-import { dirname, join, resolve, sep } from 'path';
+import { dirname, join } from 'path';
 import { execFileAsync, getCanonicalRepoPath, GitFailure } from '@archon/git';
 import * as archonPaths from '@archon/paths';
 import { z } from 'zod';
@@ -339,7 +339,10 @@ async function listTree(
   return entries;
 }
 
-/** Write every entry and `meta` into `generationDir`, which must not exist yet. */
+/**
+ * Write every entry and `meta` into `generationDir`, which must not exist yet. Each
+ * `rel` passed {@link isContainedTreePath} in {@link listTree}, so it stays in the tree.
+ */
 async function writeGeneration(
   projectRoot: string,
   source: ExtraWorkflowSource,
@@ -349,10 +352,7 @@ async function writeGeneration(
 ): Promise<void> {
   const treeDir = join(generationDir, SNAPSHOT_TREE_DIR);
   for (const entry of entries) {
-    const target = resolve(treeDir, entry.rel);
-    if (!target.startsWith(treeDir + sep)) {
-      throw new Error(`Refusing to write "${entry.rel}" outside the snapshot tree ${treeDir}.`);
-    }
+    const target = join(treeDir, entry.rel);
     const content = await git(projectRoot, ['cat-file', 'blob', entry.oid], {
       source,
       step: 'read',
