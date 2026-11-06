@@ -19,11 +19,14 @@ import { assertAbsoluteDefaultCwd } from '@archon/core/db/codebase-path';
 import * as codebaseDb from '@archon/core/db/codebases';
 import * as envVarDb from '@archon/core/db/env-vars';
 import * as isolationEnvDb from '@archon/core/db/isolation-environments';
+import { InvalidConfigError } from '@archon/core/config';
 import {
   listExtraSources,
   syncConfiguredExtraSources,
   type ExtraSourceStatus,
+  type ExtraSourceSyncEntry,
 } from '@archon/core/workflows/extra-sources';
+import { ExtraSourceSyncError } from '@archon/workflows/extra-sources';
 import { remoteIdentity } from '@archon/core/services/project-registration-identity';
 import { detectProjectKind, ProjectKindDetectionError } from '@archon/core/services/project-kind';
 import {
@@ -56,6 +59,7 @@ import {
   codebaseEnvVarParamsSchema,
   envVarMutationResponseSchema,
   extraSourcesResponseSchema,
+  extraSourcesSyncResponseSchema,
 } from './schemas/codebase.schemas';
 import { codebaseEnvironmentsResponseSchema } from './schemas/config.schemas';
 
@@ -255,6 +259,7 @@ const listExtraSourcesRoute = createRoute({
       description: 'Configured extra workflow sources',
     },
     404: jsonError('Codebase not found'),
+    422: jsonError('The project config has an invalid extraWorkflowSources entry'),
     500: jsonError('Server error'),
   },
 });
@@ -267,36 +272,83 @@ const syncExtraSourcesRoute = createRoute({
   request: { params: codebaseIdParamsSchema },
   responses: {
     200: {
-      content: { 'application/json': { schema: extraSourcesResponseSchema } },
-      description: 'Extra workflow sources after the sync',
+      content: { 'application/json': { schema: extraSourcesSyncResponseSchema } },
+      description: 'What the sync did to each source; ok is false when a source failed',
     },
     400: jsonError('The project has no git repository to sync from'),
     404: jsonError('Codebase not found'),
+    422: jsonError('The project config has an invalid extraWorkflowSources entry'),
     500: jsonError('Sync failed'),
   },
 });
 
-function toApiExtraSources(statuses: readonly ExtraSourceStatus[]): {
-  sources: {
-    ref: string;
-    path: string;
-    snapshot: { commit: string; synced_at: string; fetched: boolean } | null;
-  }[];
-} {
+type ApiExtraSourceStatus = {
+  ref: string;
+  path: string;
+  snapshot: { commit: string; synced_at: string; fetched: boolean } | null;
+};
+
+function toApiExtraSource({ source, snapshot }: ExtraSourceStatus): ApiExtraSourceStatus {
   return {
-    sources: statuses.map(({ source, snapshot }) => ({
-      ref: source.ref,
-      path: source.path,
-      snapshot: snapshot
-        ? { commit: snapshot.commit, synced_at: snapshot.synced_at, fetched: snapshot.fetched }
-        : null,
-    })),
+    ref: source.ref,
+    path: source.path,
+    snapshot: snapshot
+      ? { commit: snapshot.commit, synced_at: snapshot.synced_at, fetched: snapshot.fetched }
+      : null,
   };
 }
 
-/** A git failure message without any credentials embedded in a remote URL. */
-function withoutUrlCredentials(message: string): string {
-  return message.replace(/(\w+:\/\/)[^/@\s]+@/g, '$1');
+function toApiExtraSources(statuses: readonly ExtraSourceStatus[]): {
+  sources: ApiExtraSourceStatus[];
+} {
+  return { sources: statuses.map(toApiExtraSource) };
+}
+
+/**
+ * Log a source's sync failure and return the text the client may see. An
+ * ExtraSourceSyncError's message is written by Archon and safe; its cause holds git's
+ * stderr, which can echo a remote URL with credentials, so it is never logged as `err`.
+ * Any other error carries no git output and is logged whole, but only a fixed text is
+ * returned.
+ */
+function reportSyncFailure(codebaseId: string, error: unknown): string {
+  if (error instanceof ExtraSourceSyncError) {
+    getLog().error(
+      {
+        codebaseId,
+        ref: error.source.ref,
+        path: error.source.path,
+        step: error.step,
+        gitExitCode: error.gitExitCode,
+      },
+      'codebases.extra_sources_sync_failed'
+    );
+    return error.message;
+  }
+  getLog().error({ err: error, codebaseId }, 'codebases.extra_sources_sync_failed');
+  return 'Unexpected error while syncing this source; see the server log.';
+}
+
+function toApiSyncReport(
+  codebaseId: string,
+  entries: readonly ExtraSourceSyncEntry[]
+): {
+  ok: boolean;
+  sources: (ApiExtraSourceStatus & {
+    outcome: ExtraSourceSyncEntry['sync']['outcome'];
+    error?: string;
+  })[];
+} {
+  return {
+    ok: entries.every(entry => entry.sync.outcome === 'synced'),
+    sources: entries.map(entry => ({
+      ...toApiExtraSource(entry),
+      outcome: entry.sync.outcome,
+      ...(entry.sync.outcome === 'failed'
+        ? { error: reportSyncFailure(codebaseId, entry.sync.error) }
+        : {}),
+    })),
+  };
 }
 
 async function registerRequestedProject(
@@ -569,6 +621,7 @@ export function registerCodebaseEnvironmentRoute(app: OpenAPIHono): void {
       if (!codebase) return apiError(c, 404, 'Codebase not found');
       return c.json(toApiExtraSources(await listExtraSources(codebase.default_cwd)));
     } catch (error) {
+      if (error instanceof InvalidConfigError) return apiError(c, 422, error.summary);
       getLog().error({ err: error, codebaseId: id }, 'codebases.extra_sources_list_failed');
       return apiError(c, 500, 'Failed to list extra workflow sources');
     }
@@ -583,16 +636,12 @@ export function registerCodebaseEnvironmentRoute(app: OpenAPIHono): void {
       if (codebase.kind === 'folder') {
         return apiError(c, 400, 'A folder project has no git repository to sync workflows from');
       }
-      await syncConfiguredExtraSources(codebase.default_cwd);
-      return c.json(toApiExtraSources(await listExtraSources(codebase.default_cwd)));
+      const entries = await syncConfiguredExtraSources(codebase.default_cwd);
+      return c.json(toApiSyncReport(id, entries));
     } catch (error) {
+      if (error instanceof InvalidConfigError) return apiError(c, 422, error.summary);
       getLog().error({ err: error, codebaseId: id }, 'codebases.extra_sources_sync_failed');
-      return apiError(
-        c,
-        500,
-        'Failed to sync extra workflow sources',
-        withoutUrlCredentials(error instanceof Error ? error.message : String(error))
-      );
+      return apiError(c, 500, 'Failed to sync extra workflow sources');
     }
   });
 

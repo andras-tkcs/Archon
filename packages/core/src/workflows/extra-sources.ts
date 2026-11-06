@@ -14,28 +14,63 @@ export interface ExtraSourceStatus {
   snapshot: ExtraSourceSnapshotMeta | null;
 }
 
-/** The project's `extraWorkflowSources` with the snapshot each one currently has. */
-export async function listExtraSources(projectRoot: string): Promise<ExtraSourceStatus[]> {
-  const config = await loadConfig(projectRoot);
-  const statuses: ExtraSourceStatus[] = [];
-  for (const source of config.extraWorkflowSources ?? []) {
-    const snapshot = await readExtraSourceSnapshot(projectRoot, source);
-    statuses.push({ source, snapshot: snapshot?.meta ?? null });
+/** What one sync did to one configured source. */
+export type ExtraSourceSyncOutcome =
+  | { outcome: 'synced'; result: ExtraSourceSyncResult }
+  | { outcome: 'failed'; error: unknown }
+  | { outcome: 'not_attempted' };
+
+/** A configured source, its snapshot as the sync left it, and what the sync did to it. */
+export interface ExtraSourceSyncEntry extends ExtraSourceStatus {
+  sync: ExtraSourceSyncOutcome;
+}
+
+async function withSnapshots<T extends { source: ExtraWorkflowSource }>(
+  projectRoot: string,
+  items: readonly T[]
+): Promise<(T & Pick<ExtraSourceStatus, 'snapshot'>)[]> {
+  const statuses: (T & Pick<ExtraSourceStatus, 'snapshot'>)[] = [];
+  for (const item of items) {
+    const snapshot = await readExtraSourceSnapshot(projectRoot, item.source);
+    statuses.push({ ...item, snapshot: snapshot?.meta ?? null });
   }
   return statuses;
 }
 
+/** The project's `extraWorkflowSources` with the snapshot each one currently has. */
+export async function listExtraSources(projectRoot: string): Promise<ExtraSourceStatus[]> {
+  const config = await loadConfig(projectRoot);
+  return withSnapshots(
+    projectRoot,
+    (config.extraWorkflowSources ?? []).map(source => ({ source }))
+  );
+}
+
 /**
  * Refresh every configured extra workflow source, in config order. The first failure
- * stops the sync and propagates; sources before it keep their new snapshots.
+ * stops the sync: sources before it keep their new snapshots, it and the sources after it
+ * keep their previous ones. Every configured source is reported, so the caller can say
+ * which were synced, which failed and which were never attempted. Only a config that
+ * cannot be loaded throws, because then there are no sources to report.
  */
 export async function syncConfiguredExtraSources(
   projectRoot: string
-): Promise<ExtraSourceSyncResult[]> {
+): Promise<ExtraSourceSyncEntry[]> {
   const config = await loadConfig(projectRoot);
-  const results: ExtraSourceSyncResult[] = [];
+  const outcomes: { source: ExtraWorkflowSource; sync: ExtraSourceSyncOutcome }[] = [];
+  let failed = false;
   for (const source of config.extraWorkflowSources ?? []) {
-    results.push(await syncExtraSource(projectRoot, source, config.remote));
+    if (failed) {
+      outcomes.push({ source, sync: { outcome: 'not_attempted' } });
+      continue;
+    }
+    try {
+      const result = await syncExtraSource(projectRoot, source, config.remote);
+      outcomes.push({ source, sync: { outcome: 'synced', result } });
+    } catch (error) {
+      failed = true;
+      outcomes.push({ source, sync: { outcome: 'failed', error } });
+    }
   }
-  return results;
+  return withSnapshots(projectRoot, outcomes);
 }

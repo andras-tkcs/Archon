@@ -183,7 +183,18 @@ mock.module('@archon/paths', () => ({
 
 mockAllWorkflowModules();
 
+/** Stands in for `@archon/git`'s failure: git's stderr, which can echo a remote URL. */
+class MockGitFailure extends Error {
+  constructor(
+    readonly code: number,
+    readonly stderr: string
+  ) {
+    super(`Command failed: git fetch\n${stderr}`);
+  }
+}
+
 mock.module('@archon/git', () => ({
+  GitFailure: MockGitFailure,
   removeWorktree: mockRemoveWorktree,
   isWorktreeRegistered: mockIsWorktreeRegistered,
   toRepoPath: (p: string) => p,
@@ -1634,22 +1645,131 @@ describe('extra workflow sources', () => {
     expect(mockListExtraSources).not.toHaveBeenCalled();
   });
 
-  test('POST syncs, then returns the sources as they now stand', async () => {
+  test('POST syncs and reports what it did to each source', async () => {
     mockGetCodebase.mockImplementationOnce(async () => MOCK_CODEBASE);
-    mockSyncExtraSources.mockImplementationOnce(async () => []);
-    mockListExtraSources.mockImplementationOnce(async () => [STATUS]);
+    mockSyncExtraSources.mockImplementationOnce(async () => [
+      {
+        ...STATUS,
+        sync: {
+          outcome: 'synced',
+          result: { source: STATUS.source, commit: 'a'.repeat(40), fetched: true, files: 1 },
+        },
+      },
+    ]);
 
     const response = await makeApp().request('/api/codebases/codebase-uuid-1/sync', {
       method: 'POST',
     });
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { sources: { snapshot: { commit: string } }[] };
-    expect(body.sources[0]?.snapshot.commit).toBe('a'.repeat(40));
+    expect(await response.json()).toEqual({
+      ok: true,
+      sources: [
+        {
+          ref: 'plans',
+          path: '.',
+          outcome: 'synced',
+          snapshot: { commit: 'a'.repeat(40), synced_at: STATUS.snapshot.synced_at, fetched: true },
+        },
+      ],
+    });
     expect(mockSyncExtraSources).toHaveBeenCalledWith(MOCK_CODEBASE.default_cwd);
-    expect(mockSyncExtraSources.mock.invocationCallOrder[0]).toBeLessThan(
-      mockListExtraSources.mock.invocationCallOrder[0] ?? 0
+  });
+
+  test('POST reports a partial sync: synced, failed and not attempted sources', async () => {
+    const { ExtraSourceSyncError } = await import('@archon/workflows/extra-sources');
+    const docs = { ref: 'docs', path: '.' };
+    const later = { ref: 'later', path: 'site' };
+    mockGetCodebase.mockImplementationOnce(async () => MOCK_CODEBASE);
+    mockSyncExtraSources.mockImplementationOnce(async () => [
+      {
+        ...STATUS,
+        sync: {
+          outcome: 'synced',
+          result: { source: STATUS.source, commit: 'a'.repeat(40), fetched: true, files: 1 },
+        },
+      },
+      {
+        source: docs,
+        snapshot: null,
+        sync: {
+          outcome: 'failed',
+          error: new ExtraSourceSyncError(
+            docs,
+            'fetch',
+            'Could not fetch "docs" from remote "origin" (git exit code 128).'
+          ),
+        },
+      },
+      { source: later, snapshot: null, sync: { outcome: 'not_attempted' } },
+    ]);
+
+    const response = await makeApp().request('/api/codebases/codebase-uuid-1/sync', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      ok: boolean;
+      sources: { ref: string; outcome: string; error?: string; snapshot: unknown }[];
+    };
+    expect(body.ok).toBe(false);
+    expect(body.sources.map(source => [source.ref, source.outcome])).toEqual([
+      ['plans', 'synced'],
+      ['docs', 'failed'],
+      ['later', 'not_attempted'],
+    ]);
+    expect(body.sources[1]?.error).toBe(
+      'Could not fetch "docs" from remote "origin" (git exit code 128).'
     );
+    expect(body.sources[0]).not.toHaveProperty('error');
+    expect(body.sources[2]).not.toHaveProperty('error');
+  });
+
+  test('POST reports an unexpected source failure with a fixed text', async () => {
+    mockGetCodebase.mockImplementationOnce(async () => MOCK_CODEBASE);
+    mockSyncExtraSources.mockImplementationOnce(async () => [
+      {
+        ...STATUS,
+        sync: { outcome: 'failed', error: new Error('EACCES: /home/secret-path/extra-sources') },
+      },
+    ]);
+
+    const response = await makeApp().request('/api/codebases/codebase-uuid-1/sync', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toContain('Unexpected error while syncing this source; see the server log.');
+    expect(text).not.toContain('secret-path');
+  });
+
+  test('GET and POST return the summary of an invalid extraWorkflowSources config', async () => {
+    const { InvalidConfigError } = await import('@archon/core/config');
+    const invalid = (): never => {
+      throw new InvalidConfigError(
+        'Invalid extraWorkflowSources config',
+        '/srv/private/project/.archon/config.yaml',
+        '0.ref: ref must be a single branch, tag, ref or commit'
+      );
+    };
+    for (const [path, init, mocked] of [
+      ['/api/codebases/codebase-uuid-1/extra-sources', undefined, mockListExtraSources],
+      ['/api/codebases/codebase-uuid-1/sync', { method: 'POST' }, mockSyncExtraSources],
+    ] as const) {
+      mockGetCodebase.mockImplementationOnce(async () => MOCK_CODEBASE);
+      mocked.mockImplementationOnce(async () => invalid());
+
+      const response = await makeApp().request(path, init);
+
+      expect(response.status).toBe(422);
+      const body = (await response.json()) as { error: string };
+      expect(body.error).toBe(
+        'Invalid extraWorkflowSources config: 0.ref: ref must be a single branch, tag, ref or commit'
+      );
+      expect(body.error).not.toContain('/srv/private');
+    }
   });
 
   test('POST refuses a folder project, which has no git repository', async () => {
@@ -1667,23 +1787,47 @@ describe('extra workflow sources', () => {
     expect(response.status).toBe(404);
   });
 
-  test('POST reports a failed sync without leaking a remote URL credential', async () => {
+  test('POST reports a failed sync without leaking remote URL credentials', async () => {
+    const { ExtraSourceSyncError } = await import('@archon/workflows/extra-sources');
+    const gitOutput =
+      "fatal: unable to access 'https://x-access-token:userinfoSecret@github.com/user/repo/" +
+      "?token=querySecret#fragmentSecret'";
     mockGetCodebase.mockImplementationOnce(async () => MOCK_CODEBASE);
-    mockSyncExtraSources.mockImplementationOnce(async () => {
-      throw new Error(
-        'Could not fetch "plans" from remote "origin": fatal: unable to access ' +
-          "'https://x-access-token:secret-token@github.com/user/repo/'"
-      );
-    });
+    mockSyncExtraSources.mockImplementationOnce(async () => [
+      {
+        source: STATUS.source,
+        snapshot: null,
+        sync: {
+          outcome: 'failed',
+          error: new ExtraSourceSyncError(
+            STATUS.source,
+            'fetch',
+            'Could not fetch "plans" from remote "origin" (git exit code 128).',
+            new MockGitFailure(128, gitOutput)
+          ),
+        },
+      },
+    ]);
+    const errorSpy = spyOn(getLog(), 'error').mockClear();
 
     const response = await makeApp().request('/api/codebases/codebase-uuid-1/sync', {
       method: 'POST',
     });
 
-    expect(response.status).toBe(500);
-    const body = (await response.json()) as { error: string; detail: string };
-    expect(body.error).toBe('Failed to sync extra workflow sources');
-    expect(body.detail).toContain('Could not fetch "plans"');
-    expect(body.detail).not.toContain('secret-token');
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    const body = JSON.parse(text) as { ok: boolean; sources: { error?: string }[] };
+    expect(body.ok).toBe(false);
+    expect(body.sources[0]?.error).toContain('Could not fetch "plans"');
+    const logged = JSON.stringify(errorSpy.mock.calls);
+    expect(errorSpy.mock.calls[0]?.[0]).not.toHaveProperty('err');
+    expect(errorSpy.mock.calls).toContainEqual([
+      expect.objectContaining({ codebaseId: 'codebase-uuid-1', step: 'fetch', gitExitCode: 128 }),
+      'codebases.extra_sources_sync_failed',
+    ]);
+    for (const secret of ['userinfoSecret', 'querySecret', 'fragmentSecret']) {
+      expect(text).not.toContain(secret);
+      expect(logged).not.toContain(secret);
+    }
   });
 });

@@ -4039,6 +4039,15 @@ export interface paths {
             'application/json': components['schemas']['Error'];
           };
         };
+        /** @description The project config has an invalid extraWorkflowSources entry */
+        422: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
         /** @description Server error */
         500: {
           headers: {
@@ -4079,13 +4088,13 @@ export interface paths {
       };
       requestBody?: never;
       responses: {
-        /** @description Extra workflow sources after the sync */
+        /** @description What the sync did to each source; ok is false when a source failed */
         200: {
           headers: {
             [name: string]: unknown;
           };
           content: {
-            'application/json': components['schemas']['ExtraWorkflowSourcesResponse'];
+            'application/json': components['schemas']['ExtraWorkflowSourcesSyncResponse'];
           };
         };
         /** @description The project has no git repository to sync from */
@@ -4099,6 +4108,15 @@ export interface paths {
         };
         /** @description Codebase not found */
         404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description The project config has an invalid extraWorkflowSources entry */
+        422: {
           headers: {
             [name: string]: unknown;
           };
@@ -7792,6 +7810,15 @@ export interface components {
       synced_at: string;
       fetched: boolean;
     } | null;
+    ExtraWorkflowSourcesSyncResponse: {
+      ok: boolean;
+      sources: components['schemas']['ExtraWorkflowSourceSyncStatus'][];
+    };
+    ExtraWorkflowSourceSyncStatus: components['schemas']['ExtraWorkflowSourceStatus'] & {
+      /** @enum {string} */
+      outcome: 'synced' | 'failed' | 'not_attempted';
+      error?: string;
+    };
     CodebaseEnvironmentsResponse: {
       environments: components['schemas']['IsolationEnvironment'][];
     };

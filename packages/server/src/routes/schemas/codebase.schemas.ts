@@ -94,10 +94,27 @@ export const extraSourceStatusSchema = z
   })
   .openapi('ExtraWorkflowSourceStatus');
 
-/** GET /api/codebases/:id/extra-sources and POST /api/codebases/:id/sync response. */
+/** GET /api/codebases/:id/extra-sources response. */
 export const extraSourcesResponseSchema = z
   .object({ sources: z.array(extraSourceStatusSchema) })
   .openapi('ExtraWorkflowSourcesResponse');
+
+/** One source after a sync: its snapshot as the sync left it, and what the sync did. */
+export const extraSourceSyncStatusSchema = extraSourceStatusSchema
+  .extend({
+    outcome: z.enum(['synced', 'failed', 'not_attempted']),
+    /** Why the source failed; present only when `outcome` is `failed`. */
+    error: z.string().optional(),
+  })
+  .openapi('ExtraWorkflowSourceSyncStatus');
+
+/**
+ * POST /api/codebases/:id/sync response. The sync stops at the first failed source, so
+ * `ok` is false when any source failed and the sources after it were not attempted.
+ */
+export const extraSourcesSyncResponseSchema = z
+  .object({ ok: z.boolean(), sources: z.array(extraSourceSyncStatusSchema) })
+  .openapi('ExtraWorkflowSourcesSyncResponse');
 
 export const inspectBaseBranchBodySchema = codebaseSourceSchema.openapi('InspectBaseBranchBody');
 

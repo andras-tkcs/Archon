@@ -227,7 +227,7 @@ archon workflow sync
 archon workflow sync --json
 ```
 
-Prints one line per source with the commit it now holds, whether the ref was fetched or read locally (no remote), and the number of files. With `--json`, prints `{ ok, sources: [{ ref, path, commit, fetched, files }] }`. A project with no `extraWorkflowSources` prints a notice and exits 0. A run never syncs for you; it uses the last snapshot.
+Prints one line per source with the commit it now holds, whether the ref was fetched or read locally (no remote), and the number of files. Sources sync in config order and the first failure stops the sync: the failed source prints `<ref> FAILED: <reason>`, each later source prints `<ref> not attempted`, and the command exits 1. Sources synced before the failure keep their new snapshots. With `--json`, prints `{ ok, sources: [{ ref, path, outcome, commit?, fetched?, files?, error? }] }`, where `outcome` is `synced`, `failed` or `not_attempted`. A project with no `extraWorkflowSources` prints a notice and exits 0. A run never syncs for you; it uses the last snapshot.
 
 ### `workflow run <name> [message]`
 

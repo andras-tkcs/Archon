@@ -27,7 +27,6 @@ import {
   WorkflowSourceUnavailableError,
   assertCapturedFilesPresent,
   isSourceReadFailure,
-  DEFAULT_WORKFLOW_SOURCE_CONFIG,
   liveSourceRoots,
   loadWorkflowSource,
   workflowSourceConfigForRoots,
@@ -49,6 +48,15 @@ export { liveSourceRoots } from './workflow-source';
 export type { WorkflowSourceRoots } from './workflow-source';
 
 export { isValidWorkflowFolderSegment } from './packaged-workflow';
+
+/** Live roots read the project's configured extra sources; a capture carries its own. */
+function withExtraSources(
+  roots: WorkflowSourceRoots,
+  extraSources: readonly ExtraWorkflowSource[] | undefined
+): WorkflowSourceRoots {
+  if (roots.kind !== 'live' || !extraSources?.length) return roots;
+  return { ...roots, config: { ...roots.config, extra_sources: [...extraSources] } };
+}
 
 /**
  * Discover and load workflows from codebase.
@@ -89,12 +97,7 @@ export async function discoverWorkflows(
     extraSources?: readonly ExtraWorkflowSource[];
   }
 ): Promise<WorkflowLoadResult> {
-  const roots =
-    options.sourceRoots ??
-    liveSourceRoots(cwd, {
-      ...DEFAULT_WORKFLOW_SOURCE_CONFIG,
-      ...(options.extraSources?.length ? { extra_sources: [...options.extraSources] } : {}),
-    });
+  const roots = withExtraSources(options.sourceRoots ?? liveSourceRoots(cwd), options.extraSources);
   const context: DiscoveryContext = {
     cwd,
     roots,
@@ -229,6 +232,10 @@ export async function discoverWorkflowsWithConfig(
     loadDefaultCommands = cfg.defaults?.loadDefaultCommands;
     envVarNames = cfg.envVars && Object.keys(cfg.envVars);
     extraSources = cfg.extraWorkflowSources;
+  } else if (cwd !== null && sourceRoots?.kind === 'live' && !sourceConfig?.extra_sources) {
+    // Live roots that read source elsewhere, such as a linked worktree's authoring
+    // checkout, still take the project's extra sources; only a capture freezes them.
+    extraSources = (await loadConfig(cwd)).extraWorkflowSources;
   }
   return discoverWorkflows(cwd, {
     providers,

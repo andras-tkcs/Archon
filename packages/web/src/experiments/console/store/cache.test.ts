@@ -516,3 +516,56 @@ describe('invalidation during a subscribed load', () => {
     }
   );
 });
+
+describe('set during an in-flight load', () => {
+  test('a revalidation queued behind the dropped load still runs', async () => {
+    const key = 'test-set-supersedes:pending';
+    let settle: (value: string) => void = () => {};
+    let reads = 0;
+    const unsubscribe = subscribeKey(
+      key,
+      () => {},
+      () => {
+        reads++;
+        return reads === 1
+          ? new Promise<string>(resolve => {
+              settle = resolve;
+            })
+          : Promise.resolve('revalidated');
+      }
+    );
+    try {
+      invalidate(key);
+      set(key, 'from sync');
+      settle('stale list');
+      await flush();
+      expect(reads).toBe(2);
+      expect(get(key)).toBe('revalidated');
+    } finally {
+      unsubscribe();
+      invalidate(key);
+    }
+  });
+
+  test('a stale load that settles after set leaves the set value', async () => {
+    const key = 'test-set-supersedes:plain';
+    let settle: (value: string) => void = () => {};
+    const unsubscribe = subscribeKey(
+      key,
+      () => {},
+      () =>
+        new Promise<string>(resolve => {
+          settle = resolve;
+        })
+    );
+    try {
+      set(key, 'from sync');
+      settle('stale list');
+      await flush();
+      expect(get(key)).toBe('from sync');
+    } finally {
+      unsubscribe();
+      invalidate(key);
+    }
+  });
+});

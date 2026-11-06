@@ -11,6 +11,9 @@ export type ExtraSourceStatus = components['schemas']['ExtraWorkflowSourceStatus
 
 type ExtraSourcesResponse = components['schemas']['ExtraWorkflowSourcesResponse'];
 
+/** What one sync did to every configured source; `ok` is false when one failed. */
+export type ExtraSourcesSyncReport = components['schemas']['ExtraWorkflowSourcesSyncResponse'];
+
 export async function listExtraSources(projectId: string): Promise<ExtraSourceStatus[]> {
   const res = await requestJson<ExtraSourcesResponse>(
     `/api/codebases/${encodeURIComponent(projectId)}/extra-sources`
@@ -18,10 +21,9 @@ export async function listExtraSources(projectId: string): Promise<ExtraSourceSt
   return res.sources;
 }
 
-export async function syncExtraSources(projectId: string): Promise<ExtraSourceStatus[]> {
-  const res = await requestJson<ExtraSourcesResponse>(
+export async function syncExtraSources(projectId: string): Promise<ExtraSourcesSyncReport> {
+  return requestJson<ExtraSourcesSyncReport>(
     `/api/codebases/${encodeURIComponent(projectId)}/sync`,
     { method: 'POST' }
   );
-  return res.sources;
 }
